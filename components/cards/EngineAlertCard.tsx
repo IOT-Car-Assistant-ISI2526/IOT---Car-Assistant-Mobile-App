@@ -1,0 +1,67 @@
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
+import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { StatItem } from '@/components/StatItem';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+
+export function EngineAlertCard() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+
+  return (
+    <View style={[styles.alertCard, { backgroundColor: colors.cardOrange }]}>
+      <View style={styles.alertHeader}>
+        <View style={styles.alertMainInfo}>
+          <ThemedText type="subtitle" style={styles.cardTitle}>Engine alert</ThemedText>
+          <IconSymbol name="gearshape.fill" size={60} color="white" style={styles.alertIcon} />
+          <ThemedText style={styles.mainStatusText}>found issue</ThemedText>
+        </View>
+        <View style={styles.verticalDivider} />
+        <View style={styles.alertSideInfo}>
+          <StatItem label="Temperature:" value="overheating" align="right" />
+          <StatItem label="Noise level:" value="normal" align="right" />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  alertCard: {
+    borderRadius: 25,
+    padding: 20,
+  },
+  cardTitle: {
+    color: 'white',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  alertMainInfo: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  alertSideInfo: {
+    flex: 1,
+    paddingLeft: 15,
+  },
+  verticalDivider: {
+    width: 1,
+    height: '80%',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  alertIcon: {
+    marginVertical: 10,
+  },
+  mainStatusText: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+});
+
