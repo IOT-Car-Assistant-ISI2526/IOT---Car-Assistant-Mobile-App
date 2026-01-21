@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, View, ScrollView, SafeAreaView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, ScrollView, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Header } from '@/components/Header';
 import { ActionButton } from '@/components/ActionButton';
@@ -11,7 +11,50 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 export default function ParkingModeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { isConnected } = useBle();
+  const { 
+    isConnected, 
+    hcsr04Distance, 
+    isHcsr04Streaming,
+    startHcsr04Streaming,
+    stopHcsr04Streaming 
+  } = useBle();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleEnableParkingMode = async () => {
+    if (!isConnected) {
+      Alert.alert('Error', 'Please connect a device first');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await startHcsr04Streaming();
+    } catch (error: any) {
+      Alert.alert('Error', `Failed to enable parking mode: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisableParkingMode = async () => {
+    setIsLoading(true);
+    try {
+      await stopHcsr04Streaming();
+    } catch (error: any) {
+      Alert.alert('Error', `Failed to disable parking mode: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (isHcsr04Streaming) {
+        stopHcsr04Streaming().catch(console.error);
+      }
+    };
+  }, []);
 
   if (!isConnected) {
     return (
@@ -32,40 +75,61 @@ export default function ParkingModeScreen() {
       <Header />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.iconContainer}>
-          <IconSymbol name="parking.fill" size={100} color={colors.tint} />
-        </View>
-
         <ThemedText type="title" style={styles.title}>Parking Mode</ThemedText>
         <ThemedText style={styles.description}>
-          Monitor your vehicle while parked. Get alerts for movement, temperature changes, and more.
+            Enable parking mode to start receiving real-time distance measurements.
         </ThemedText>
 
         <View style={[styles.card, { backgroundColor: colors.cardTeal }]}>
-          <ThemedText type="subtitle" style={styles.cardTitle}>Parking Status</ThemedText>
+          <ThemedText type="subtitle" style={styles.cardTitle}>Sensor Status</ThemedText>
           <View style={styles.divider} />
           
           <View style={styles.statusRow}>
             <ThemedText style={styles.statusLabel}>Status:</ThemedText>
-            <View style={styles.statusBadge}>
-              <ThemedText style={styles.statusText}>Active</ThemedText>
+            <View style={[styles.statusBadge, { backgroundColor: isHcsr04Streaming ? 'rgba(76, 175, 80, 0.5)' : 'rgba(255, 255, 255, 0.3)' }]}>
+              <ThemedText style={styles.statusText}>
+                {isHcsr04Streaming ? 'Active' : 'Inactive'}
+              </ThemedText>
             </View>
           </View>
           
-          <View style={styles.infoRow}>
-            <ThemedText style={styles.infoLabel}>Location:</ThemedText>
-            <ThemedText style={styles.infoValue}>GPS: 52.2297° N, 21.0122° E</ThemedText>
-          </View>
+
           
-          <View style={styles.infoRow}>
-            <ThemedText style={styles.infoLabel}>Parked Since:</ThemedText>
-            <ThemedText style={styles.infoValue}>2024-01-15 10:00</ThemedText>
-          </View>
+          {hcsr04Distance !== null && (
+            <View style={styles.infoRow}>
+              <ThemedText style={styles.infoLabel}>Warning:</ThemedText>
+              <ThemedText style={[styles.infoValue, { color: hcsr04Distance < 30 ? '#ff5252' : 'white' }]}>
+                {hcsr04Distance < 30 ? 'Too Close!' : hcsr04Distance < 50 ? 'Caution' : 'Safe'}
+              </ThemedText>
+            </View>
+          )}
         </View>
 
+        {isHcsr04Streaming && (
+          <View style={styles.distanceDisplay}>
+            <ThemedText type="title" style={[styles.distanceValue, { color: colors.tint }]}>
+              {hcsr04Distance !== null ? hcsr04Distance : '--'}
+            </ThemedText>
+            <ThemedText style={styles.distanceUnit}>cm</ThemedText>
+          </View>
+        )}
+
         <View style={styles.actionsContainer}>
-          <ActionButton text="Enable Parking Mode" />
-          <ActionButton text="Disable Parking Mode" variant="small" backgroundColor={colors.buttonRed} />
+          {!isHcsr04Streaming ? (
+            <ActionButton 
+              text={isLoading ? "Starting..." : "Enable Parking Mode"} 
+              onPress={handleEnableParkingMode}
+              disabled={isLoading}
+            />
+          ) : (
+            <ActionButton 
+              text={isLoading ? "Stopping..." : "Disable Parking Mode"} 
+              variant="small" 
+              backgroundColor={colors.buttonRed}
+              onPress={handleDisableParkingMode}
+              disabled={isLoading}
+            />
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -169,6 +233,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.7,
     fontSize: 16,
+  },
+  distanceDisplay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: 220,
+    marginVertical: 18,
+    paddingVertical: 44,
+    paddingHorizontal: 28,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  distanceValue: {
+    fontSize: 96,
+    fontWeight: 'bold',
+  },
+  distanceUnit: {
+    fontSize: 28,
+    opacity: 0.7,
+    marginTop: 5,
   },
 });
 

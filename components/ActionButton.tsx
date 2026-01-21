@@ -9,9 +9,10 @@ interface ActionButtonProps {
   onPress?: () => void;
   variant?: 'default' | 'small';
   backgroundColor?: string;
+  disabled?: boolean;
 }
 
-export function ActionButton({ text, onPress, variant = 'default', backgroundColor }: ActionButtonProps) {
+export function ActionButton({ text, onPress, variant = 'default', backgroundColor, disabled = false }: ActionButtonProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const bgColor = backgroundColor || colors.cardTeal;
@@ -20,9 +21,10 @@ export function ActionButton({ text, onPress, variant = 'default', backgroundCol
     <TouchableOpacity 
       style={[
         variant === 'small' ? styles.smallActionButton : styles.actionButton, 
-        { backgroundColor: bgColor }
+        { backgroundColor: bgColor, opacity: disabled ? 0.5 : 1 }
       ]}
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
     >
       <ThemedText style={variant === 'small' ? styles.smallButtonText : styles.buttonText}>
         {text}

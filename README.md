@@ -75,6 +75,20 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## BLE Configuration with ESP32
+
+This application can configure the Wi-Fi credentials (SSID and password) of an ESP32 device over Bluetooth Low Energy (BLE).
+
+### UUIDs Used in the Application
+
+The application uses the following UUIDs which are compatible with the ESP32 configuration:
+
+-   **Service UUID**: `0000ff00-0000-1000-8000-00805f9b34fb` (0x00FF)
+-   **Notes Characteristic**: `0000ff01-0000-1000-8000-00805f9b34fb` (0xFF01)
+-   **SSID Characteristic**: `0000ff02-0000-1000-8000-00805f9b34fb` (0xFF02)
+-   **Password Characteristic**: `0000ff03-0000-1000-8000-00805f9b34fb` (0xFF03)
+-   **WiFi Switch Characteristic**: `0000ff04-0000-1000-8000-00805f9b34fb` (0xFF04)
+
 ## Get a fresh project
 
 When you're ready, run:
@@ -98,3 +112,4 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+

@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { StyleSheet, View, ScrollView, SafeAreaView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, ScrollView, SafeAreaView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Header } from '@/components/Header';
@@ -24,9 +24,15 @@ export default function ConnectDeviceScreen() {
     stopScan,
     connectDevice,
     disconnectDevice,
+    writeSsid,
+    writePassword,
+    triggerWifiSwitch,
   } = useBle();
 
-  // Stop scanning when component unmounts
+  const [ssid, setSsid] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   useEffect(() => {
     return () => {
       stopScan();
@@ -39,16 +45,30 @@ export default function ConnectDeviceScreen() {
 
   const handleConnect = async (device: Device) => {
     await connectDevice(device);
-    // Navigate back after successful connection
-    setTimeout(() => {
-      if (isConnected) {
-        router.back();
-      }
-    }, 500);
   };
 
   const handleDisconnect = async () => {
     await disconnectDevice();
+  };
+
+  const handleSendCredentials = async () => {
+    if (!ssid) {
+      Alert.alert('Error', 'Please enter a Wi-Fi SSID');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await writeSsid(ssid);
+      await writePassword(password);
+      await triggerWifiSwitch();
+      Alert.alert('Success', 'Wi-Fi credentials sent successfully!');
+      setSsid('');
+      setPassword('');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to send credentials');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -81,6 +101,32 @@ export default function ConnectDeviceScreen() {
               <ThemedText style={styles.statusText}>Connected</ThemedText>
               <ThemedText style={styles.deviceName}>{deviceName}</ThemedText>
             </View>
+
+            <View style={styles.wifiForm}>
+              <ThemedText type="subtitle" style={styles.wifiTitle}>Configure Wi-Fi</ThemedText>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+                placeholder="Enter Wi-Fi SSID"
+                placeholderTextColor={colors.textSecondary}
+                value={ssid}
+                onChangeText={setSsid}
+              />
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+                placeholder="Enter Wi-Fi Password"
+                placeholderTextColor={colors.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+              <ActionButton
+                text={isSubmitting ? 'Sending...' : 'Send Credentials'}
+                onPress={handleSendCredentials}
+                variant="default"
+                disabled={isSubmitting}
+              />
+            </View>
+
             <ActionButton
               text="Disconnect"
               variant="default"
@@ -242,5 +288,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.6,
     fontSize: 14,
+  },
+  wifiForm: {
+    width: '100%',
+    gap: 15,
+    marginVertical: 20,
+  },
+  wifiTitle: {
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  input: {
+    padding: 15,
+    borderRadius: 10,
+    fontSize: 16,
+    width: '100%',
   },
 });
