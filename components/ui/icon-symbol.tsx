@@ -30,6 +30,7 @@ const MAPPING = {
   'car.fill': 'directions-car',
   'parking.fill': 'local-parking',
   'p.circle.fill': 'local-parking',
+  'exclamationmark.triangle.fill': 'warning',
 } as IconMapping;
 
 /**

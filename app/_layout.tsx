@@ -5,6 +5,9 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { BleProvider } from '@/contexts/BleContext';
+import { AlertProvider } from '@/contexts/AlertContext';
+import { AlertPopup } from '@/components/AlertPopup';
+import { BleAlertBridge } from '@/components/BleAlertBridge';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -15,17 +18,34 @@ export default function RootLayout() {
 
   return (
     <BleProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="connect-device" options={{ headerShown: false }} />
-          <Stack.Screen name="measurements" options={{ headerShown: false }} />
-          <Stack.Screen name="parking-mode" options={{ headerShown: false }} />
-          <Stack.Screen name="settings" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+
+      <AlertProvider>
+        <BleAlertBridge />
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="connect-device" options={{ headerShown: false }} />
+            <Stack.Screen name="measurements" options={{ headerShown: false }} />
+            <Stack.Screen name="parking-mode" options={{ headerShown: false }} />
+            <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          <StatusBar style="auto" />
+          <AlertPopup />
+        </ThemeProvider>
+      </AlertProvider>
     </BleProvider>
   );
 }
+
+//           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+//             <Stack>
+//               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+//               <Stack.Screen name="connect-device" options={{ headerShown: false }} />
+//               <Stack.Screen name="measurements" options={{ headerShown: false }} />
+//               <Stack.Screen name="parking-mode" options={{ headerShown: false }} />
+//               <Stack.Screen name="settings" options={{ headerShown: false }} />
+//               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+//             </Stack>
+//             <StatusBar style="auto" />
+//           </ThemeProvider>

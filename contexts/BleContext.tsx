@@ -10,6 +10,7 @@ const PASSWORD_CHARACTERISTIC_UUID = '0000ff03-0000-1000-8000-00805f9b34fb';
 const WIFI_SWITCH_CHARACTERISTIC_UUID = '0000ff04-0000-1000-8000-00805f9b34fb';
 const HCSR04_CTRL_CHARACTERISTIC_UUID = '0000ff05-0000-1000-8000-00805f9b34fb';
 const HCSR04_DATA_CHARACTERISTIC_UUID = '0000ff06-0000-1000-8000-00805f9b34fb';
+const ALERT_CHARACTERISTIC_UUID = '0000ff07-0000-1000-8000-00805f9b34fb';
 
 interface BleContextType {
   isConnected: boolean;
@@ -31,6 +32,8 @@ interface BleContextType {
   isHcsr04Streaming: boolean;
   startHcsr04Streaming: () => Promise<void>;
   stopHcsr04Streaming: () => Promise<void>;
+  // Alert functions
+  setAlertCallback: (callback: (message: string) => void) => void;
 }
 
 const BleContext = createContext<BleContextType | undefined>(undefined);
@@ -49,6 +52,8 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const subscriptionRef = useRef<any>(null);
   const connectedDeviceRef = useRef<Device | null>(null);
   const hcsr04SubscriptionRef = useRef<any>(null);
+  const alertSubscriptionRef = useRef<any>(null);
+  const onAlertReceivedRef = useRef<((message: string) => void) | null>(null);
 
   const disconnectDevice = async () => {
     // Stop HCSR04 streaming and cleanup subscription
@@ -60,6 +65,16 @@ export function BleProvider({ children }: { children: ReactNode }) {
         console.error('Error removing HCSR04 subscription:', err);
       }
       hcsr04SubscriptionRef.current = null;
+    }
+    
+    // Cleanup alert subscription
+    if (alertSubscriptionRef.current) {
+      try {
+        alertSubscriptionRef.current.remove();
+      } catch (err: any) {
+        console.error('Error removing alert subscription:', err);
+      }
+      alertSubscriptionRef.current = null;
     }
     
     // Write '0' to stop streaming if device is still connected
@@ -250,13 +265,23 @@ export function BleProvider({ children }: { children: ReactNode }) {
         // Cleanup HCSR04 subscription
         if (hcsr04SubscriptionRef.current) {
           try {
-            // Subscription.remove() is synchronous
             hcsr04SubscriptionRef.current.remove();
           } catch (err) {
             console.error('Error removing HCSR04 subscription:', err);
           }
           hcsr04SubscriptionRef.current = null;
         }
+        
+        // Cleanup alert subscription
+        if (alertSubscriptionRef.current) {
+          try {
+            alertSubscriptionRef.current.remove();
+          } catch (err) {
+            console.error('Error removing alert subscription:', err);
+          }
+          alertSubscriptionRef.current = null;
+        }
+        
         setIsConnected(false);
         setDeviceName(null);
         setDeviceId(null);
@@ -265,6 +290,40 @@ export function BleProvider({ children }: { children: ReactNode }) {
         setHcsr04Distance(null);
         setIsHcsr04Streaming(false);
       });
+      
+      // Subscribe to alert notifications automatically when connected
+      try {
+        const alertSubscription = connectedDevice.monitorCharacteristicForService(
+          WIFI_SERVICE_UUID,
+          ALERT_CHARACTERISTIC_UUID,
+          (error, char) => {
+            if (error) {
+              console.error('Alert notification error:', error);
+              return;
+            }
+
+            if (char && char.value) {
+              // Parse alert message from base64
+              const buffer = Buffer.from(char.value, 'base64');
+              const message = buffer.toString('utf8').trim();
+              console.log('Alert received:', message);
+              
+              // Call the alert callback if set
+              if (onAlertReceivedRef.current) {
+                onAlertReceivedRef.current(message);
+              }
+            }
+          }
+        );
+        
+        if (alertSubscription) {
+          alertSubscriptionRef.current = alertSubscription;
+          console.log('Alert notifications subscribed');
+        }
+      } catch (err: any) {
+        console.error('Failed to subscribe to alert notifications:', err);
+        // Don't throw - alerts are optional
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to connect to device');
       setIsConnected(false);
@@ -336,11 +395,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
     try {
       // Clean up any previous subscription (defensive; prevents double-monitoring crashes)
       if (hcsr04SubscriptionRef.current) {
-        try {
-          hcsr04SubscriptionRef.current.remove();
-        } catch (err) {
-          console.error('Error removing previous HCSR04 subscription:', err);
-        }
+
         hcsr04SubscriptionRef.current = null;
       }
 
@@ -365,8 +420,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.log('HCSR04 streaming started');
 
       // Monitor the DATA characteristic for notifications
-      // NOTE: monitorCharacteristicForService returns a Subscription synchronously.
-      const subscription = connectedDeviceRef.current.monitorCharacteristicForService(
+      const characteristic = await connectedDeviceRef.current.monitorCharacteristicForService(
         WIFI_SERVICE_UUID,
         HCSR04_DATA_CHARACTERISTIC_UUID,
         (error, char) => {
@@ -389,11 +443,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         }
       );
 
-      if (!subscription) {
-        throw new Error('Failed to subscribe to HCSR04 notifications');
-      }
-
-      hcsr04SubscriptionRef.current = subscription;
+      hcsr04SubscriptionRef.current = characteristic;
       setIsHcsr04Streaming(true);
     } catch (err: any) {
       console.error('Failed to start HCSR04 streaming:', err);
@@ -431,6 +481,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setAlertCallback = (callback: (message: string) => void) => {
+    onAlertReceivedRef.current = callback;
+  };
+
   return (
     <BleContext.Provider
       value={{
@@ -452,6 +506,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         isHcsr04Streaming,
         startHcsr04Streaming,
         stopHcsr04Streaming,
+        setAlertCallback,
       }}
     >
       {children}

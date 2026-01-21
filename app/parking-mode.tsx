@@ -15,10 +15,11 @@ export default function ParkingModeScreen() {
     isConnected, 
     hcsr04Distance, 
     isHcsr04Streaming,
-    startHcsr04Streaming,
-    stopHcsr04Streaming 
+    startHcsr04Streaming
   } = useBle();
   const [isLoading, setIsLoading] = useState(false);
+  const [displayedDistance, setDisplayedDistance] = useState<number | null>(null);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
 
   const handleEnableParkingMode = async () => {
     if (!isConnected) {
@@ -36,16 +37,17 @@ export default function ParkingModeScreen() {
     }
   };
 
-  const handleDisableParkingMode = async () => {
-    setIsLoading(true);
-    try {
-      await stopHcsr04Streaming();
-    } catch (error: any) {
-      Alert.alert('Error', `Failed to disable parking mode: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+   const handleReenableParkingMode = async () => {
+      setIsLoading(true);
+      try {
+        await startHcsr04Streaming();
+      } catch (error: any) {
+        Alert.alert('Error', `Failed to re-enable parking mode: ${error.message}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
 
   // Cleanup on unmount
   useEffect(() => {
@@ -55,6 +57,35 @@ export default function ParkingModeScreen() {
       }
     };
   }, []);
+useEffect(() => {
+  if (hcsr04Distance !== null) {
+    setDisplayedDistance(hcsr04Distance);
+    setLastUpdateTime(Date.now());
+  }
+}, [hcsr04Distance]);
+useEffect(() => {
+  const interval = setInterval(() => {
+    if (Date.now() - lastUpdateTime > 9000) {
+      setDisplayedDistance(null);
+    }
+  }, 500);
+
+  return () => clearInterval(interval);
+}, [lastUpdateTime]);
+
+
+  const formatDistance = (distance: number | null): string | number => {
+    if (distance === null) {
+      return '--';
+    }
+    if (distance < 10) {
+      return '< 10';
+    }
+    if (distance > 200) {
+      return '> 200';
+    }
+    return distance;
+  };
 
   if (!isConnected) {
     return (
@@ -108,7 +139,7 @@ export default function ParkingModeScreen() {
         {isHcsr04Streaming && (
           <View style={styles.distanceDisplay}>
             <ThemedText type="title" style={[styles.distanceValue, { color: colors.tint }]}>
-              {hcsr04Distance !== null ? hcsr04Distance : '--'}
+              {formatDistance(displayedDistance)}
             </ThemedText>
             <ThemedText style={styles.distanceUnit}>cm</ThemedText>
           </View>
@@ -123,10 +154,10 @@ export default function ParkingModeScreen() {
             />
           ) : (
             <ActionButton 
-              text={isLoading ? "Stopping..." : "Disable Parking Mode"} 
-              variant="small" 
+              text={isLoading ? "Re-enabling..." : "Re-enable Parking Mode"}
+              variant="small"
               backgroundColor={colors.buttonRed}
-              onPress={handleDisableParkingMode}
+              onPress={handleReenableParkingMode}
               disabled={isLoading}
             />
           )}
@@ -248,6 +279,7 @@ const styles = StyleSheet.create({
   distanceValue: {
     fontSize: 96,
     fontWeight: 'bold',
+    lineHeight: 100,
   },
   distanceUnit: {
     fontSize: 28,
@@ -255,4 +287,3 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 });
-

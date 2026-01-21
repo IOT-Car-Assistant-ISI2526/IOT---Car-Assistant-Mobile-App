@@ -18,12 +18,7 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <SafeDrivingCard />
-
         <ActionButton text="See previous week" />
-
-        <WeatherAlertCard />
-        <ActionButton text="See for the full week" variant="small" />
-
         <EngineAlertCard />
         <ActionButton text="Examine" variant="small" backgroundColor={colors.buttonRed} />
       </ScrollView>
