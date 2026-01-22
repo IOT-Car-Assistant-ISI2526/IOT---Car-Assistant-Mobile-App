@@ -11,6 +11,8 @@ const WIFI_SWITCH_CHARACTERISTIC_UUID = '0000ff04-0000-1000-8000-00805f9b34fb';
 const HCSR04_CTRL_CHARACTERISTIC_UUID = '0000ff05-0000-1000-8000-00805f9b34fb';
 const HCSR04_DATA_CHARACTERISTIC_UUID = '0000ff06-0000-1000-8000-00805f9b34fb';
 const ALERT_CHARACTERISTIC_UUID = '0000ff07-0000-1000-8000-00805f9b34fb';
+const ENGINE_DIAGNOSTICS_CTRL_UUID = '0000ff08-0000-1000-8000-00805f9b34fb';
+const ENGINE_DIAGNOSTICS_DATA_UUID = '0000ff09-0000-1000-8000-00805f9b34fb';
 
 interface BleContextType {
   isConnected: boolean;
@@ -34,6 +36,12 @@ interface BleContextType {
   stopHcsr04Streaming: () => Promise<void>;
   // Alert functions
   setAlertCallback: (callback: (message: string) => void) => void;
+  // Engine Diagnostics
+  isDiagnosing: boolean;
+  engineTemperatures: number[];
+  startEngineDiagnostics: () => Promise<void>;
+  stopEngineDiagnostics: () => Promise<void>;
+
 }
 
 const BleContext = createContext<BleContextType | undefined>(undefined);
@@ -51,9 +59,12 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const managerRef = useRef<BleManager | null>(null);
   const subscriptionRef = useRef<any>(null);
   const connectedDeviceRef = useRef<Device | null>(null);
+  const diagnosticsMonitorRef = useRef<any>(null);
   const hcsr04SubscriptionRef = useRef<any>(null);
   const alertSubscriptionRef = useRef<any>(null);
   const onAlertReceivedRef = useRef<((message: string) => void) | null>(null);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [engineTemperatures, setEngineTemperatures] = useState<number[]>([]);
 
   const disconnectDevice = async () => {
     // Stop HCSR04 streaming and cleanup subscription
@@ -481,6 +492,108 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
   };
 
+ const startEngineDiagnostics = async () => {
+   if (!connectedDeviceRef.current) throw new Error('No device connected');
+
+   try {
+     setError(null);
+     setEngineTemperatures([]);
+
+     // Ensure services are discovered
+     await connectedDeviceRef.current.discoverAllServicesAndCharacteristics();
+
+     // Remove previous subscription if exists
+     if (diagnosticsMonitorRef.current) {
+       try { diagnosticsMonitorRef.current.remove(); } catch {}
+       diagnosticsMonitorRef.current = null;
+     }
+
+     // Start diagnostics by writing '1'
+     await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
+       WIFI_SERVICE_UUID,
+       ENGINE_DIAGNOSTICS_CTRL_UUID,
+       Buffer.from('1').toString('base64')
+     );
+
+     // Subscribe to data notifications
+    diagnosticsMonitorRef.current =
+      connectedDeviceRef.current.monitorCharacteristicForService(
+        WIFI_SERVICE_UUID,
+        ENGINE_DIAGNOSTICS_DATA_UUID,
+        (err, char) => {
+          try {
+            if (err) {
+              console.error('Diagnostics error:', err);
+              setError(err.message);
+              setIsDiagnosing(false);
+              return;
+            }
+
+            if (char?.value) {
+              const buffer = Buffer.from(char.value, 'base64');
+
+              if (buffer.length >= 4) {
+                // Safe parsing
+                let temp: number;
+                try {
+                  temp = buffer.readFloatLE(0);
+                  if (isNaN(temp) || !isFinite(temp)) {
+                    console.warn('Invalid temperature value, ignoring:', temp);
+                    return;
+                  }
+                } catch (parseErr) {
+                  console.warn('Failed to parse temperature, ignoring:', parseErr);
+                  return;
+                }
+
+                setEngineTemperatures(prev => [...prev, temp].slice(-50));
+              } else {
+                console.warn('Received too short buffer for temperature, ignoring:', buffer);
+              }
+            }
+          } catch (outerErr) {
+            console.error('Unexpected error in diagnostics handler:', outerErr);
+            // Prevent crash, do not rethrow
+          }
+        }
+      );
+
+
+     setIsDiagnosing(true);
+     console.log('Engine diagnostics started');
+   } catch (err: any) {
+     setIsDiagnosing(false);
+     console.error('Failed to start engine diagnostics:', err);
+     throw new Error(`Failed to start diagnostics: ${err.message}`);
+   }
+ };
+
+ const stopEngineDiagnostics = async () => {
+   if (!connectedDeviceRef.current) return;
+
+   try {
+     if (diagnosticsMonitorRef.current) {
+       try { diagnosticsMonitorRef.current.remove(); } catch {}
+       diagnosticsMonitorRef.current = null;
+     }
+
+     await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
+       WIFI_SERVICE_UUID,
+       ENGINE_DIAGNOSTICS_CTRL_UUID,
+       Buffer.from('0').toString('base64')
+     );
+
+     setIsDiagnosing(false);
+     setEngineTemperatures([]);
+     console.log('Engine diagnostics stopped');
+   } catch (err: any) {
+     setIsDiagnosing(false);
+     console.error('Failed to stop engine diagnostics:', err);
+     throw new Error(`Failed to stop diagnostics: ${err.message}`);
+   }
+ };
+
+
   const setAlertCallback = (callback: (message: string) => void) => {
     onAlertReceivedRef.current = callback;
   };
@@ -507,6 +620,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
         startHcsr04Streaming,
         stopHcsr04Streaming,
         setAlertCallback,
+        isDiagnosing,
+        engineTemperatures,
+        startEngineDiagnostics,
+        stopEngineDiagnostics,
       }}
     >
       {children}
