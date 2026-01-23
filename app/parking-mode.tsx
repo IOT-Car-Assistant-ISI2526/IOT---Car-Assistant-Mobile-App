@@ -15,7 +15,8 @@ export default function ParkingModeScreen() {
     isConnected, 
     hcsr04Distance, 
     isHcsr04Streaming,
-    startHcsr04Streaming
+    startHcsr04Streaming,
+    stopHcsr04Streaming
   } = useBle();
   const [isLoading, setIsLoading] = useState(false);
   const [displayedDistance, setDisplayedDistance] = useState<number | null>(null);

@@ -63,21 +63,24 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const hcsr04SubscriptionRef = useRef<any>(null);
   const alertSubscriptionRef = useRef<any>(null);
   const onAlertReceivedRef = useRef<((message: string) => void) | null>(null);
+  const isMountedRef = useRef(true);
+  const operationInProgressRef = useRef(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [engineTemperatures, setEngineTemperatures] = useState<number[]>([]);
 
   const disconnectDevice = async () => {
+    operationInProgressRef.current = false;
+
     // Stop HCSR04 streaming and cleanup subscription
     if (hcsr04SubscriptionRef.current) {
       try {
-
-        await hcsr04SubscriptionRef.current.remove();
+        hcsr04SubscriptionRef.current.remove();
       } catch (err: any) {
         console.error('Error removing HCSR04 subscription:', err);
       }
       hcsr04SubscriptionRef.current = null;
     }
-    
+
     // Cleanup alert subscription
     if (alertSubscriptionRef.current) {
       try {
@@ -87,7 +90,17 @@ export function BleProvider({ children }: { children: ReactNode }) {
       }
       alertSubscriptionRef.current = null;
     }
-    
+
+    // Cleanup diagnostics subscription
+    if (diagnosticsMonitorRef.current) {
+      try {
+        diagnosticsMonitorRef.current.remove();
+      } catch (err: any) {
+        console.error('Error removing diagnostics subscription:', err);
+      }
+      diagnosticsMonitorRef.current = null;
+    }
+
     // Write '0' to stop streaming if device is still connected
     if (connectedDeviceRef.current && isHcsr04Streaming) {
       try {
@@ -101,7 +114,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         console.error('Error stopping HCSR04 streaming:', err);
       }
     }
-    
+
     if (connectedDeviceRef.current && managerRef.current) {
       try {
         await connectedDeviceRef.current.cancelConnection();
@@ -109,22 +122,29 @@ export function BleProvider({ children }: { children: ReactNode }) {
         console.error('Disconnect error:', err);
       }
     }
-    
-    setIsConnected(false);
-    setDeviceName(null);
-    setDeviceId(null);
-    setConnectedDevice(null);
+
+    if (isMountedRef.current) {
+      setIsConnected(false);
+      setDeviceName(null);
+      setDeviceId(null);
+      setConnectedDevice(null);
+      setHcsr04Distance(null);
+      setIsHcsr04Streaming(false);
+      setIsDiagnosing(false);
+      setEngineTemperatures([]);
+      setError(null);
+    }
     connectedDeviceRef.current = null;
-    setHcsr04Distance(null);
-    setIsHcsr04Streaming(false);
-    setError(null);
   };
 
   // Initialize BLE Manager
   useEffect(() => {
+    isMountedRef.current = true;
     managerRef.current = new BleManager();
-    
+
     const subscription = managerRef.current.onStateChange((state) => {
+      if (!isMountedRef.current) return;
+
       if (state === State.PoweredOn) {
         setError(null);
       } else if (state === State.PoweredOff) {
@@ -142,6 +162,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
     subscriptionRef.current = subscription;
 
     return () => {
+      isMountedRef.current = false;
       if (subscriptionRef.current) {
         subscriptionRef.current.remove();
       }
@@ -161,7 +182,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         ]);
-        
+
         return (
           granted['android.permission.BLUETOOTH_SCAN'] === PermissionsAndroid.RESULTS.GRANTED &&
           granted['android.permission.BLUETOOTH_CONNECT'] === PermissionsAndroid.RESULTS.GRANTED &&
@@ -173,7 +194,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
         ]);
-        
+
         return (
           granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED ||
           granted['android.permission.ACCESS_COARSE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED
@@ -185,13 +206,17 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
   const scanForDevices = async () => {
     if (!managerRef.current) {
-      setError('BLE Manager not initialized');
+      if (isMountedRef.current) {
+        setError('BLE Manager not initialized');
+      }
       return;
     }
 
     const hasPermission = await requestPermissions();
     if (!hasPermission) {
-      setError('Bluetooth permissions are required to scan for devices');
+      if (isMountedRef.current) {
+        setError('Bluetooth permissions are required to scan for devices');
+      }
       Alert.alert(
         'Permission Required',
         'Bluetooth permissions are required to scan for devices. Please grant permissions in app settings.',
@@ -200,19 +225,25 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      setError(null);
-      setIsScanning(true);
-      setScannedDevices([]);
+      if (isMountedRef.current) {
+        setError(null);
+        setIsScanning(true);
+        setScannedDevices([]);
+      }
 
       const state = await managerRef.current.state();
       if (state !== State.PoweredOn) {
-        setError('Bluetooth is not enabled. Please turn on Bluetooth.');
-        setIsScanning(false);
+        if (isMountedRef.current) {
+          setError('Bluetooth is not enabled. Please turn on Bluetooth.');
+          setIsScanning(false);
+        }
         return;
       }
 
       // Start scanning
       managerRef.current.startDeviceScan(null, null, (error, device) => {
+        if (!isMountedRef.current) return;
+
         if (error) {
           console.error('Scan error:', error);
           setError(error.message);
@@ -234,11 +265,15 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
       // Stop scanning after 10 seconds
       setTimeout(() => {
-        stopScan();
+        if (isMountedRef.current) {
+          stopScan();
+        }
       }, 10000);
     } catch (err: any) {
-      setError(err.message || 'Failed to start scanning');
-      setIsScanning(false);
+      if (isMountedRef.current) {
+        setError(err.message || 'Failed to start scanning');
+        setIsScanning(false);
+      }
     }
   };
 
@@ -246,7 +281,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
     if (managerRef.current) {
       managerRef.current.stopDeviceScan();
     }
-    setIsScanning(false);
+    if (isMountedRef.current) {
+      setIsScanning(false);
+    }
   };
 
   const connectDevice = async (device: Device) => {
@@ -256,23 +293,31 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      setError(null);
+      if (isMountedRef.current) {
+        setError(null);
+      }
       stopScan();
 
       // Connect to device
       const connectedDevice = await device.connect();
-      
+
       // Discover services and characteristics
       await connectedDevice.discoverAllServicesAndCharacteristics();
-      
-      setConnectedDevice(connectedDevice);
-      connectedDeviceRef.current = connectedDevice;
-      setIsConnected(true);
-      setDeviceName(device.name || 'Unknown Device');
-      setDeviceId(device.id);
 
-      // Monitor connection state
+      if (isMountedRef.current) {
+        setConnectedDevice(connectedDevice);
+        setIsConnected(true);
+        setDeviceName(device.name || 'Unknown Device');
+        setDeviceId(device.id);
+      }
+      connectedDeviceRef.current = connectedDevice;
+
+      // Monitor connection state - FIRST priority, mark device as disconnected BEFORE cleanup
       connectedDevice.onDisconnected(() => {
+        console.log('Device disconnected detected');
+        operationInProgressRef.current = false;
+        connectedDeviceRef.current = null; // Mark as disconnected FIRST to prevent further ops
+
         // Cleanup HCSR04 subscription
         if (hcsr04SubscriptionRef.current) {
           try {
@@ -282,7 +327,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
           }
           hcsr04SubscriptionRef.current = null;
         }
-        
+
         // Cleanup alert subscription
         if (alertSubscriptionRef.current) {
           try {
@@ -292,41 +337,60 @@ export function BleProvider({ children }: { children: ReactNode }) {
           }
           alertSubscriptionRef.current = null;
         }
-        
+
+        // Cleanup diagnostics subscription
+        if (diagnosticsMonitorRef.current) {
+          try {
+            diagnosticsMonitorRef.current.remove();
+          } catch (err) {
+            console.error('Error removing diagnostics subscription:', err);
+          }
+          diagnosticsMonitorRef.current = null;
+        }
+
+        if (!isMountedRef.current) return;
+
         setIsConnected(false);
         setDeviceName(null);
         setDeviceId(null);
         setConnectedDevice(null);
-        connectedDeviceRef.current = null;
         setHcsr04Distance(null);
         setIsHcsr04Streaming(false);
+        setIsDiagnosing(false);
+        setEngineTemperatures([]);
       });
-      
+
       // Subscribe to alert notifications automatically when connected
       try {
         const alertSubscription = connectedDevice.monitorCharacteristicForService(
           WIFI_SERVICE_UUID,
           ALERT_CHARACTERISTIC_UUID,
           (error, char) => {
+            if (!isMountedRef.current) return;
+
             if (error) {
               console.error('Alert notification error:', error);
               return;
             }
 
             if (char && char.value) {
-              // Parse alert message from base64
-              const buffer = Buffer.from(char.value, 'base64');
-              const message = buffer.toString('utf8').trim();
-              console.log('Alert received:', message);
-              
-              // Call the alert callback if set
-              if (onAlertReceivedRef.current) {
-                onAlertReceivedRef.current(message);
+              try {
+                // Parse alert message from base64
+                const buffer = Buffer.from(char.value, 'base64');
+                const message = buffer.toString('utf8').trim();
+                console.log('Alert received:', message);
+
+                // Call the alert callback if set
+                if (onAlertReceivedRef.current) {
+                  onAlertReceivedRef.current(message);
+                }
+              } catch (parseErr) {
+                console.warn('Failed to parse alert message:', parseErr);
               }
             }
           }
         );
-        
+
         if (alertSubscription) {
           alertSubscriptionRef.current = alertSubscription;
           console.log('Alert notifications subscribed');
@@ -336,11 +400,13 @@ export function BleProvider({ children }: { children: ReactNode }) {
         // Don't throw - alerts are optional
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to connect to device');
-      setIsConnected(false);
-      setDeviceName(null);
-      setDeviceId(null);
-      setConnectedDevice(null);
+      if (isMountedRef.current) {
+        setError(err.message || 'Failed to connect to device');
+        setIsConnected(false);
+        setDeviceName(null);
+        setDeviceId(null);
+        setConnectedDevice(null);
+      }
       connectedDeviceRef.current = null;
     }
   };
@@ -351,6 +417,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
     try {
       const base64Ssid = Buffer.from(ssid).toString('base64');
+      if (!connectedDeviceRef.current) {
+        throw new Error('Device disconnected before write');
+      }
       await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
         WIFI_SERVICE_UUID,
         SSID_CHARACTERISTIC_UUID,
@@ -359,6 +428,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.log('SSID written successfully');
     } catch (err: any) {
       console.error('Failed to write SSID:', err);
+      if (isMountedRef.current) {
+        setIsConnected(false);
+      }
+      connectedDeviceRef.current = null;
       throw new Error(`Failed to write SSID: ${err.message}`);
     }
   };
@@ -369,6 +442,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
     try {
       const base64Password = Buffer.from(password).toString('base64');
+      if (!connectedDeviceRef.current) {
+        throw new Error('Device disconnected before write');
+      }
       await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
         WIFI_SERVICE_UUID,
         PASSWORD_CHARACTERISTIC_UUID,
@@ -377,6 +453,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.log('Password written successfully');
     } catch (err: any) {
       console.error('Failed to write password:', err);
+      if (isMountedRef.current) {
+        setIsConnected(false);
+      }
+      connectedDeviceRef.current = null;
       throw new Error(`Failed to write password: ${err.message}`);
     }
   };
@@ -387,6 +467,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
     try {
       const value = Buffer.from('1').toString('base64');
+      if (!connectedDeviceRef.current) {
+        throw new Error('Device disconnected before write');
+      }
       await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
         WIFI_SERVICE_UUID,
         WIFI_SWITCH_CHARACTERISTIC_UUID,
@@ -395,6 +478,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.log('WiFi switch triggered successfully');
     } catch (err: any) {
       console.error('Failed to trigger WiFi switch:', err);
+      if (isMountedRef.current) {
+        setIsConnected(false);
+      }
+      connectedDeviceRef.current = null;
       throw new Error(`Failed to trigger WiFi switch: ${err.message}`);
     }
   };
@@ -406,7 +493,11 @@ export function BleProvider({ children }: { children: ReactNode }) {
     try {
       // Clean up any previous subscription (defensive; prevents double-monitoring crashes)
       if (hcsr04SubscriptionRef.current) {
-
+        try {
+          hcsr04SubscriptionRef.current.remove();
+        } catch (e) {
+          console.warn('Error cleaning up previous subscription:', e);
+        }
         hcsr04SubscriptionRef.current = null;
       }
 
@@ -435,30 +526,55 @@ export function BleProvider({ children }: { children: ReactNode }) {
         WIFI_SERVICE_UUID,
         HCSR04_DATA_CHARACTERISTIC_UUID,
         (error, char) => {
+          if (!isMountedRef.current) return;
+
           if (error) {
             console.error('HCSR04 notification error:', error);
-            setIsHcsr04Streaming(false);
+            // Check if device disconnected
+            if (error.message?.includes('disconnected') || error.message?.includes('Device was not connected')) {
+              if (isMountedRef.current) {
+                setIsConnected(false);
+                setIsHcsr04Streaming(false);
+              }
+              connectedDeviceRef.current = null;
+            }
             return;
           }
 
           if (char && char.value) {
-            // Parse little-endian uint16 from base64
-            const buffer = Buffer.from(char.value, 'base64');
-            if (buffer.length >= 2) {
-              // Little-endian: first byte is LSB, second byte is MSB
-              const distance = buffer[0] | (buffer[1] << 8);
-              setHcsr04Distance(distance);
-              console.log('HCSR04 distance:', distance, 'cm');
+            try {
+              // Parse little-endian uint16 from base64
+              const buffer = Buffer.from(char.value, 'base64');
+              if (buffer.length >= 2) {
+                // Little-endian: first byte is LSB, second byte is MSB
+                const distance = buffer[0] | (buffer[1] << 8);
+                setHcsr04Distance(distance);
+                console.log('HCSR04 distance:', distance, 'cm');
+              }
+            } catch (parseErr) {
+              console.warn('Failed to parse HCSR04 data:', parseErr);
             }
           }
         }
       );
 
       hcsr04SubscriptionRef.current = characteristic;
-      setIsHcsr04Streaming(true);
+      if (isMountedRef.current) {
+        setIsHcsr04Streaming(true);
+      }
     } catch (err: any) {
       console.error('Failed to start HCSR04 streaming:', err);
-      setIsHcsr04Streaming(false);
+      if (isMountedRef.current) {
+        setIsHcsr04Streaming(false);
+      }
+      // Check if device disconnected
+      if (err.message?.includes('disconnected') || err.message?.includes('Device was not connected')) {
+        if (isMountedRef.current) {
+          setIsConnected(false);
+        }
+        connectedDeviceRef.current = null;
+        throw new Error('Device disconnected');
+      }
       throw new Error(`Failed to start HCSR04 streaming: ${err.message}`);
     }
   };
@@ -467,27 +583,41 @@ export function BleProvider({ children }: { children: ReactNode }) {
     try {
       // Cancel notification subscription
       if (hcsr04SubscriptionRef.current) {
-        // Subscription.remove() is synchronous
-        hcsr04SubscriptionRef.current.remove();
+        try {
+          hcsr04SubscriptionRef.current.remove();
+        } catch (e) {
+          console.warn('Error removing subscription:', e);
+        }
         hcsr04SubscriptionRef.current = null;
       }
 
       // Write '0' to CTRL characteristic to stop streaming
       if (connectedDeviceRef.current) {
-        const value = Buffer.from('0').toString('base64');
-        await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
-          WIFI_SERVICE_UUID,
-          HCSR04_CTRL_CHARACTERISTIC_UUID,
-          value
-        );
-        console.log('HCSR04 streaming stopped');
+        try {
+          const value = Buffer.from('0').toString('base64');
+          await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
+            WIFI_SERVICE_UUID,
+            HCSR04_CTRL_CHARACTERISTIC_UUID,
+            value
+          );
+          console.log('HCSR04 streaming stopped');
+        } catch (writeErr: any) {
+          // Device disconnected - that's okay, we're stopping anyway
+          if (writeErr.message?.includes('disconnected') || writeErr.message?.includes('Device was not connected')) {
+            console.log('Device disconnected, skipping stop command');
+          } else {
+            console.warn('Error sending stop command:', writeErr);
+          }
+        }
       }
 
       setIsHcsr04Streaming(false);
       setHcsr04Distance(null);
     } catch (err: any) {
       console.error('Failed to stop HCSR04 streaming:', err);
-      setIsHcsr04Streaming(false);
+      if (isMountedRef.current) {
+        setIsHcsr04Streaming(false);
+      }
       throw new Error(`Failed to stop HCSR04 streaming: ${err.message}`);
     }
   };
@@ -496,11 +626,22 @@ export function BleProvider({ children }: { children: ReactNode }) {
    if (!connectedDeviceRef.current) throw new Error('No device connected');
 
    try {
-     setError(null);
-     setEngineTemperatures([]);
+     if (isMountedRef.current) {
+       setError(null);
+       setEngineTemperatures([]);
+     }
 
      // Ensure services are discovered
-     await connectedDeviceRef.current.discoverAllServicesAndCharacteristics();
+     try {
+       await connectedDeviceRef.current.discoverAllServicesAndCharacteristics();
+     } catch (discoverErr) {
+       console.error('Failed to discover services:', discoverErr);
+       if (isMountedRef.current) {
+         setIsConnected(false);
+       }
+       connectedDeviceRef.current = null;
+       throw new Error('Device disconnected during discovery');
+     }
 
      // Remove previous subscription if exists
      if (diagnosticsMonitorRef.current) {
@@ -509,62 +650,90 @@ export function BleProvider({ children }: { children: ReactNode }) {
      }
 
      // Start diagnostics by writing '1'
-     await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
-       WIFI_SERVICE_UUID,
-       ENGINE_DIAGNOSTICS_CTRL_UUID,
-       Buffer.from('1').toString('base64')
-     );
+     try {
+       await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
+         WIFI_SERVICE_UUID,
+         ENGINE_DIAGNOSTICS_CTRL_UUID,
+         Buffer.from('1').toString('base64')
+       );
+     } catch (writeErr: any) {
+       console.error('Failed to write diagnostics control:', writeErr);
+       if (isMountedRef.current) {
+         setIsConnected(false);
+       }
+       connectedDeviceRef.current = null;
+       throw new Error('Device disconnected during write');
+     }
 
      // Subscribe to data notifications
-    diagnosticsMonitorRef.current =
-      connectedDeviceRef.current.monitorCharacteristicForService(
-        WIFI_SERVICE_UUID,
-        ENGINE_DIAGNOSTICS_DATA_UUID,
-        (err, char) => {
-          try {
-            if (err) {
-              console.error('Diagnostics error:', err);
-              setError(err.message);
-              setIsDiagnosing(false);
-              return;
-            }
+    try {
+      diagnosticsMonitorRef.current =
+        connectedDeviceRef.current.monitorCharacteristicForService(
+          WIFI_SERVICE_UUID,
+          ENGINE_DIAGNOSTICS_DATA_UUID,
+          (err, char) => {
+            if (!isMountedRef.current) return;
 
-            if (char?.value) {
-              const buffer = Buffer.from(char.value, 'base64');
-
-              if (buffer.length >= 4) {
-                // Safe parsing
-                let temp: number;
-                try {
-                  temp = buffer.readFloatLE(0);
-                  if (isNaN(temp) || !isFinite(temp)) {
-                    console.warn('Invalid temperature value, ignoring:', temp);
-                    return;
-                  }
-                } catch (parseErr) {
-                  console.warn('Failed to parse temperature, ignoring:', parseErr);
-                  return;
+            try {
+              if (err) {
+                console.error('Diagnostics error:', err);
+                if (isMountedRef.current) {
+                  setIsConnected(false);
+                  setIsDiagnosing(false);
                 }
-
-                setEngineTemperatures(prev => [...prev, temp].slice(-50));
-              } else {
-                console.warn('Received too short buffer for temperature, ignoring:', buffer);
+                connectedDeviceRef.current = null;
+                return;
               }
+
+              if (char?.value) {
+                try {
+                  const buffer = Buffer.from(char.value, 'base64');
+                  if (buffer.length >= 4) {
+                    let temp: number;
+                    try {
+                      temp = buffer.readFloatLE(0);
+                      if (isNaN(temp) || !isFinite(temp)) {
+                        console.warn('Invalid temperature value, ignoring:', temp);
+                        return;
+                      }
+                    } catch (parseErr) {
+                      console.warn('Failed to parse temperature, ignoring:', parseErr);
+                      return;
+                    }
+
+                    if (isMountedRef.current) {
+                      setEngineTemperatures(prev => [...prev, temp].slice(-50));
+                    }
+                  }
+                } catch (bufErr) {
+                  console.warn('Buffer error:', bufErr);
+                }
+              }
+            } catch (outerErr) {
+              console.error('Unexpected error in diagnostics handler:', outerErr);
             }
-          } catch (outerErr) {
-            console.error('Unexpected error in diagnostics handler:', outerErr);
-            // Prevent crash, do not rethrow
           }
-        }
-      );
+        );
+    } catch (monitorErr: any) {
+      console.error('Failed to monitor diagnostics:', monitorErr);
+      if (isMountedRef.current) {
+        setIsConnected(false);
+        setIsDiagnosing(false);
+      }
+      connectedDeviceRef.current = null;
+      throw new Error(`Failed to monitor diagnostics: ${monitorErr.message}`);
+    }
 
-
-     setIsDiagnosing(true);
+     if (isMountedRef.current) {
+       setIsDiagnosing(true);
+     }
      console.log('Engine diagnostics started');
    } catch (err: any) {
-     setIsDiagnosing(false);
+     if (isMountedRef.current) {
+       setIsDiagnosing(false);
+     }
      console.error('Failed to start engine diagnostics:', err);
-     throw new Error(`Failed to start diagnostics: ${err.message}`);
+     throw err;
    }
  };
 
@@ -583,11 +752,15 @@ export function BleProvider({ children }: { children: ReactNode }) {
        Buffer.from('0').toString('base64')
      );
 
-     setIsDiagnosing(false);
-     setEngineTemperatures([]);
+     if (isMountedRef.current) {
+       setIsDiagnosing(false);
+       setEngineTemperatures([]);
+     }
      console.log('Engine diagnostics stopped');
    } catch (err: any) {
-     setIsDiagnosing(false);
+     if (isMountedRef.current) {
+       setIsDiagnosing(false);
+     }
      console.error('Failed to stop engine diagnostics:', err);
      throw new Error(`Failed to stop diagnostics: ${err.message}`);
    }

@@ -5,23 +5,33 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { StatItem } from '@/components/StatItem';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useBle } from '@/contexts/BleContext';
+
 
 export function EngineAlertCard() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { lastEngineAlertTemp } = useBle();
+
 
   return (
     <View style={[styles.alertCard, { backgroundColor: colors.cardOrange }]}>
       <View style={styles.alertHeader}>
         <View style={styles.alertMainInfo}>
-          <ThemedText type="subtitle" style={styles.cardTitle}>Engine alert</ThemedText>
+          <ThemedText type="subtitle" style={styles.cardTitle}>Engine state</ThemedText>
           <IconSymbol name="gearshape.fill" size={60} color="white" style={styles.alertIcon} />
-          <ThemedText style={styles.mainStatusText}>found issue</ThemedText>
+          <ThemedText style={styles.mainStatusText}>current status</ThemedText>
         </View>
         <View style={styles.verticalDivider} />
         <View style={styles.alertSideInfo}>
-          <StatItem label="Temperature:" value="overheating" align="right" />
-          <StatItem label="Noise level:" value="normal" align="right" />
+          <ThemedText style={styles.largeValue}>{
+              lastEngineAlertTemp
+              ? `${lastEngineAlertTemp.toFixed(1)} °C`
+              : '—'
+              }
+          </ThemedText>
+
+
         </View>
       </View>
     </View>
@@ -49,6 +59,7 @@ const styles = StyleSheet.create({
   alertSideInfo: {
     flex: 1,
     paddingLeft: 15,
+    fontSize: 26,
   },
   verticalDivider: {
     width: 1,
@@ -62,6 +73,12 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  largeValue: {
+    color: 'white',
+    fontSize: 50,
+    fontWeight: 'bold',
+    lineHeight: 85,
   },
 });
 

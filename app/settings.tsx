@@ -1,20 +1,41 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, Switch, ScrollView } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Switch, ScrollView, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/contexts/AuthContext';
+import { ActionButton } from '@/components/ActionButton';
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const router = useRouter();
+  const { logout, username } = useAuth();
   const [isDevelopmentMode, setIsDevelopmentMode] = useState(false);
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', onPress: () => {} },
+        {
+          text: 'Sign Out',
+          onPress: async () => {
+            await logout();
+            router.replace('/login');
+          },
+          style: 'destructive',
+        },
+      ],
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Stack.Screen 
+      <Stack.Screen
         options={{
           title: 'Settings',
           headerShown: true,
@@ -27,9 +48,9 @@ export default function SettingsScreen() {
             backgroundColor: colors.background,
           },
           headerTintColor: colors.text,
-        }} 
+        }}
       />
-      
+
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>General</ThemedText>
@@ -62,6 +83,22 @@ export default function SettingsScreen() {
               <ThemedText style={styles.infoValue}>1.0.0</ThemedText>
             </View>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>Account</ThemedText>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.infoItem}>
+              <ThemedText style={styles.infoLabel}>User</ThemedText>
+              <ThemedText style={styles.infoValue}>{username}</ThemedText>
+            </View>
+          </View>
+          <ActionButton
+            text="Sign Out"
+            onPress={handleLogout}
+            backgroundColor={colors.buttonRed}
+            variant="default"
+          />
         </View>
       </ScrollView>
     </View>

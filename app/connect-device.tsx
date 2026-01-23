@@ -129,9 +129,7 @@ export default function ConnectDeviceScreen() {
 
             <ActionButton
               text="Disconnect"
-              variant="default"
-              backgroundColor={colors.buttonRed}
-              onPress={handleDisconnect}
+              disabled={true}
             />
           </View>
         ) : (
