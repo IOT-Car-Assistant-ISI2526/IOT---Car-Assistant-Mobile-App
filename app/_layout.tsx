@@ -13,7 +13,7 @@ import { BleAlertBridge } from '@/components/BleAlertBridge';
 import { Colors } from '@/constants/theme';
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  anchor: 'login',
 };
 
 function RootLayoutNav() {
@@ -30,18 +30,14 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ animationEnabled: !isLoggedIn }}>
+      <Stack initialRouteName="login">
         <Stack.Screen name="login" options={{ headerShown: false }} />
-        {isLoggedIn && (
-          <>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="connect-device" options={{ headerShown: false }} />
-            <Stack.Screen name="measurements" options={{ headerShown: false }} />
-            <Stack.Screen name="parking-mode" options={{ headerShown: false }} />
-            <Stack.Screen name="settings" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </>
-        )}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="connect-device" options={{ headerShown: false }} />
+        <Stack.Screen name="measurements" options={{ headerShown: false }} />
+        <Stack.Screen name="parking-mode" options={{ headerShown: false }} />
+        <Stack.Screen name="settings" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
       <BleAlertBridge />

@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBle } from '@/contexts/BleContext';
 import { useRouter } from 'expo-router';
 import { Device } from 'react-native-ble-plx';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 export default function ConnectDeviceScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -97,7 +98,7 @@ export default function ConnectDeviceScreen() {
         {isConnected ? (
           <View style={styles.connectedContainer}>
             <View style={[styles.statusCard, { backgroundColor: colors.cardTeal }]}>
-              <IconSymbol name="checkmark.circle.fill" size={50} color="white" />
+              <FontAwesome name="check" size={24} color="white" />
               <ThemedText style={styles.statusText}>Connected</ThemedText>
               <ThemedText style={styles.deviceName}>{deviceName}</ThemedText>
             </View>

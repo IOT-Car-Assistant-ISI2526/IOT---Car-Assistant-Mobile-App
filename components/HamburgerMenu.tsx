@@ -25,7 +25,7 @@ export function HamburgerMenu({ visible, onClose }: HamburgerMenuProps) {
       id: 'home',
       label: 'Home',
       icon: 'house.fill',
-      route: '/(tabs)',
+      route: '/home',
       disabled: false,
     },
     {

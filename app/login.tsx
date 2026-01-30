@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
+
 export default function LoginScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -34,7 +35,7 @@ export default function LoginScreen() {
     try {
       const result = await login(username, password);
       if (result.success) {
-        router.replace('/(tabs)');
+        router.replace('/home');
       } else {
         Alert.alert('Login Failed', result.error || 'Invalid username or password');
       }

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, ReactNode, useEffect, useRe
 import * as SecureStore from 'expo-secure-store';
 
 // Update this to your server URL
-const API_URL = 'http://10.87.216.41:5000';
+const API_URL = 'http://10.76.152.41:5000';
 
 interface AuthContextType {
   isLoggedIn: boolean;
