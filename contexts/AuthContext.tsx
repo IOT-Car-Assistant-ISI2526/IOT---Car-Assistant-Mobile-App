@@ -35,7 +35,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (user: string, pass: string): Promise<{ success: boolean; error?: string }> => {
-    // Validation
     if (user.length < 3) {
       return { success: false, error: 'Username must be at least 3 characters' };
     }
@@ -72,8 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('No access_token in response:', data);
         return { success: false, error: 'Invalid server response' };
       }
-
-      // Store token and user info securely
       await SecureStore.setItemAsync('access_token', access_token);
       await SecureStore.setItemAsync('user_id', String(user_id));
       await SecureStore.setItemAsync('username', returnedUsername || user);
