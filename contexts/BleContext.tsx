@@ -4,7 +4,6 @@ import { Platform, PermissionsAndroid, Alert } from 'react-native';
 import { Buffer } from 'buffer';
 
 
-// UUIDs for BLE connection
 const WIFI_SERVICE_UUID = '000000ff-0000-1000-8000-00805f9b34fb';
 const SSID_CHARACTERISTIC_UUID = '0000ff02-0000-1000-8000-00805f9b34fb';
 const PASSWORD_CHARACTERISTIC_UUID = '0000ff03-0000-1000-8000-00805f9b34fb';
@@ -15,7 +14,7 @@ const ALERT_CHARACTERISTIC_UUID = '0000ff07-0000-1000-8000-00805f9b34fb';
 const ENGINE_DIAGNOSTICS_CTRL_UUID = '0000ff08-0000-1000-8000-00805f9b34fb';
 const ENGINE_DIAGNOSTICS_DATA_UUID = '0000ff09-0000-1000-8000-00805f9b34fb';
 const TIMESTAMP_CHARACTERISTIC_UUID = '0000ff0a-0000-1000-8000-00805f9b34fb';
-const METADATA_CHARACTERISTIC_UUID = '0000ff01-0000-1000-8000-00805f9b34fb'; // FF01: 4 bytes timestamp + optional note
+const METADATA_CHARACTERISTIC_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
 
 interface BleContextType {
   isConnected: boolean;
@@ -32,19 +31,19 @@ interface BleContextType {
   writeSsid: (ssid: string) => Promise<void>;
   writePassword: (password: string) => Promise<void>;
   triggerWifiSwitch: () => Promise<void>;
-  // HCSR04 sensor functions
   hcsr04Distance: number | null;
   isHcsr04Streaming: boolean;
   startHcsr04Streaming: () => Promise<void>;
   stopHcsr04Streaming: () => Promise<void>;
-  // Alert functions
   setAlertCallback: (callback: (message: string) => void) => void;
-  // Engine Diagnostics
   isDiagnosing: boolean;
   engineTemperatures: number[];
   startEngineDiagnostics: () => Promise<void>;
   stopEngineDiagnostics: () => Promise<void>;
 
+  bmp280Temperature: number | null;
+  veml770Illuminance: number | null;
+  lastEngineAlertTemp: number | null;
 }
 
 const BleContext = createContext<BleContextType | undefined>(undefined);
@@ -70,13 +69,21 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const operationInProgressRef = useRef(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [engineTemperatures, setEngineTemperatures] = useState<number[]>([]);
+  const [bmp280Temperature, setBmp280Temperature] = useState<number | null>(null);
+  const [veml770Illuminance, setVeml770Illuminance] = useState<number | null>(null);
+  const [lastEngineAlertTemp, setLastEngineAlertTemp] = useState<number | null>(null);
 
   const disconnectDevice = async () => {
     operationInProgressRef.current = false;
 
-    // Stop HCSR04 streaming and cleanup subscription
+    console.log('Starting disconnectDevice');
+    console.log('isHcsr04Streaming:', isHcsr04Streaming);
+    console.log('connectedDeviceRef.current:', connectedDeviceRef.current);
+    console.log('managerRef.current:', managerRef.current);
+
     if (hcsr04SubscriptionRef.current) {
       try {
+        console.log('Removing HCSR04 subscription');
         hcsr04SubscriptionRef.current.remove();
       } catch (err: any) {
         console.error('Error removing HCSR04 subscription:', err);
@@ -84,9 +91,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
       hcsr04SubscriptionRef.current = null;
     }
 
-    // Cleanup alert subscription
     if (alertSubscriptionRef.current) {
       try {
+        console.log('Removing alert subscription');
         alertSubscriptionRef.current.remove();
       } catch (err: any) {
         console.error('Error removing alert subscription:', err);
@@ -94,9 +101,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
       alertSubscriptionRef.current = null;
     }
 
-    // Cleanup diagnostics subscription
     if (diagnosticsMonitorRef.current) {
       try {
+        console.log('Removing diagnostics subscription');
         diagnosticsMonitorRef.current.remove();
       } catch (err: any) {
         console.error('Error removing diagnostics subscription:', err);
@@ -104,7 +111,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
       diagnosticsMonitorRef.current = null;
     }
 
-    // Write '0' to stop streaming if device is still connected
     if (connectedDeviceRef.current && isHcsr04Streaming) {
       try {
         const value = Buffer.from('0').toString('base64');
@@ -120,6 +126,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
     if (connectedDeviceRef.current && managerRef.current) {
       try {
+        console.log('Cancelling device connection');
         await connectedDeviceRef.current.cancelConnection();
       } catch (err: any) {
         console.error('Disconnect error:', err);
@@ -127,6 +134,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
 
     if (isMountedRef.current) {
+      console.log('Resetting state variables');
       setIsConnected(false);
       setDeviceName(null);
       setDeviceId(null);
@@ -138,9 +146,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
       setError(null);
     }
     connectedDeviceRef.current = null;
+    console.log('disconnectDevice completed');
   };
 
-  // Initialize BLE Manager
   useEffect(() => {
     isMountedRef.current = true;
     managerRef.current = new BleManager();
@@ -153,7 +161,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
       } else if (state === State.PoweredOff) {
         setError('Bluetooth is turned off. Please enable Bluetooth.');
         setIsScanning(false);
-        // Disconnect if connected
         if (connectedDeviceRef.current) {
           disconnectDevice();
         }
@@ -175,11 +182,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Request permissions
   const requestPermissions = async (): Promise<boolean> => {
     if (Platform.OS === 'android') {
       if (Platform.Version >= 31) {
-        // Android 12+ requires new permissions
         const granted = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
@@ -192,7 +197,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
           granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED
         );
       } else {
-        // Older Android versions
         const granted = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
@@ -204,7 +208,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         );
       }
     }
-    return true; // iOS permissions are handled via Info.plist
+    return true;
   };
 
   const scanForDevices = async () => {
@@ -243,7 +247,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Start scanning
       managerRef.current.startDeviceScan(null, null, (error, device) => {
         if (!isMountedRef.current) return;
 
@@ -256,7 +259,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
         if (device) {
           setScannedDevices((prevDevices) => {
-            // Avoid duplicates
             const exists = prevDevices.some((d) => d.id === device.id);
             if (!exists && device.name) {
               return [...prevDevices, device];
@@ -266,7 +268,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      // Stop scanning after 10 seconds
       setTimeout(() => {
         if (isMountedRef.current) {
           stopScan();
@@ -289,23 +290,16 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  /**
-   * Synchronize timestamp with ESP32 device via BLE
-   * Sends Unix timestamp (uint32_t, little-endian) to characteristic 0xFF0A
-   */
+
   const syncTimestamp = async (device: Device) => {
     try {
-      // Get current Unix timestamp (seconds since 1970-01-01)
       const timestamp = Math.floor(Date.now() / 1000);
-      
-      // Create 4-byte buffer for uint32_t (little-endian)
+
       const buffer = Buffer.alloc(4);
       buffer.writeUInt32LE(timestamp, 0);
-      
-      // Convert to base64 for BLE transmission
+
       const base64Data = buffer.toString('base64');
-      
-      // Write timestamp to characteristic 0xFF0A
+
       await device.writeCharacteristicWithoutResponseForService(
         WIFI_SERVICE_UUID,
         TIMESTAMP_CHARACTERISTIC_UUID,
@@ -316,39 +310,27 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.log('Timestamp bytes (little-endian):', Array.from(buffer));
     } catch (err: any) {
       console.error('Failed to sync timestamp:', err);
-      // Don't throw - timestamp sync is optional, device has fallback mechanism
       console.warn('Device will use fallback timestamp (BUILD_TIMESTAMP + uptime)');
     }
   };
 
-  /**
-   * Send metadata to ESP32 device via BLE
-   * Characteristic 0xFF01 (dual-purpose):
-   * - First 4 bytes: Unix timestamp (uint32_t, little-endian)
-   * - Remaining bytes: Optional note (text)
-   */
+
   const sendMetadata = async (device: Device, note?: string) => {
     try {
-      // Get current Unix timestamp (seconds since 1970-01-01)
       const timestamp = Math.floor(Date.now() / 1000);
 
-      // Create buffer with 4 bytes for timestamp + optional note
       const noteBuffer = note ? Buffer.from(note, 'utf8') : Buffer.alloc(0);
       const totalSize = 4 + noteBuffer.length;
       const buffer = Buffer.alloc(totalSize);
 
-      // Write timestamp as first 4 bytes (little-endian)
       buffer.writeUInt32LE(timestamp, 0);
 
-      // Write note after timestamp (if provided)
       if (note) {
         noteBuffer.copy(buffer, 4);
       }
 
-      // Convert to base64 for BLE transmission
       const base64Data = buffer.toString('base64');
 
-      // Write to characteristic 0xFF01
       await device.writeCharacteristicWithoutResponseForService(
         WIFI_SERVICE_UUID,
         METADATA_CHARACTERISTIC_UUID,
@@ -359,7 +341,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.log('Metadata bytes (timestamp + note):', Array.from(buffer));
     } catch (err: any) {
       console.error('Failed to send metadata:', err);
-      // Don't throw - metadata is optional, device has fallback mechanism
       console.warn('Device will use fallback timestamp (BUILD_TIMESTAMP + uptime)');
     }
   };
@@ -376,13 +357,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
       }
       stopScan();
 
-      // Connect to device
       const connectedDevice = await device.connect();
 
-      // Discover services and characteristics
       await connectedDevice.discoverAllServicesAndCharacteristics();
 
-      // Send metadata (timestamp + optional note) immediately after connection
       await sendMetadata(connectedDevice, 'Connected from app');
 
       if (isMountedRef.current) {
@@ -393,14 +371,12 @@ export function BleProvider({ children }: { children: ReactNode }) {
       }
       connectedDeviceRef.current = connectedDevice;
 
-      // Monitor connection state - FIRST priority, mark device as disconnected BEFORE cleanup
       connectedDevice.onDisconnected(() => {
         console.log('Device disconnected detected');
         operationInProgressRef.current = false;
-        connectedDeviceRef.current = null; // Mark as disconnected FIRST to prevent further ops
+        connectedDeviceRef.current = null;
 
         try {
-          // Cleanup HCSR04 subscription
           if (hcsr04SubscriptionRef.current) {
             hcsr04SubscriptionRef.current.remove();
             hcsr04SubscriptionRef.current = null;
@@ -410,7 +386,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          // Cleanup alert subscription
           if (alertSubscriptionRef.current) {
             alertSubscriptionRef.current.remove();
             alertSubscriptionRef.current = null;
@@ -420,7 +395,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          // Cleanup diagnostics subscription
           if (diagnosticsMonitorRef.current) {
             diagnosticsMonitorRef.current.remove();
             diagnosticsMonitorRef.current = null;
@@ -445,7 +419,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      // Subscribe to alert notifications automatically when connected
       try {
         const alertSubscription = connectedDevice.monitorCharacteristicForService(
           WIFI_SERVICE_UUID,
@@ -460,15 +433,61 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
             if (char && char.value) {
               try {
-                // Parse alert message from base64
                 const buffer = Buffer.from(char.value, 'base64');
                 const message = buffer.toString('utf8').trim();
                 console.log('Alert received:', message);
 
+                let modifiedMessage = message;
+                if (message.startsWith('VEML7700')) {
+                  modifiedMessage = 'Visibility is low. If road is clear, high beam headlights are recommended.';
+                  const valueMatch = message.match(/VEML7700:\s*(\d+\.\d)/);
+                  if (valueMatch) {
+                    setVeml770Illuminance(parseFloat(valueMatch[1]));
+                  }
+                } else if (message.startsWith('BMP280')) {
+                  modifiedMessage = 'Risk of ice. Drive carefully.';
+                  const valueMatch = message.match(/BMP280:\s*(-?\d+\.\d)/);
+                  if (valueMatch) {
+                    setBmp280Temperature(parseFloat(valueMatch[1]));
+                  }
+                } else if (message.startsWith('MAX6675')) {
+                  const valueMatch = message.match(/MAX6675:\s*(\d+\.\d)/);
+                  if (valueMatch) {
+                    const temp = parseFloat(valueMatch[1]);
+                    setLastEngineAlertTemp(temp);
+                    if (temp > 60) {
+                      modifiedMessage = 'Engine overheating';
+                    } else {
+                        modifiedMessage = '--';
+                    }
+                  }
+                } else if (message.startsWith('MAC:')) {
+                  const macMatch = message.match(/MAC:\s*([A-Fa-f0-9]{12})/);
+                  if (macMatch) {
+                    const macAddress = macMatch[1];
+                    console.log('MAC address received:', macAddress);
 
-                // Call the alert callback if set
-                if (onAlertReceivedRef.current) {
-                  onAlertReceivedRef.current(message);
+                    fetch('https://example.com/api/mac-address', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ macAddress }),
+                    })
+                      .then((response) => {
+                        if (!response.ok) {
+                          throw new Error('Failed to send MAC address');
+                        }
+                        console.log('MAC address sent successfully');
+                      })
+                      .catch((error) => {
+                        console.error('Error sending MAC address:', error);
+                      });
+                  }
+                }
+
+                if (onAlertReceivedRef.current && modifiedMessage !== '--') {
+                  onAlertReceivedRef.current(modifiedMessage);
                 }
               } catch (parseErr) {
                 console.warn('Failed to parse alert message:', parseErr);
@@ -483,7 +502,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         }
       } catch (err: any) {
         console.error('Failed to subscribe to alert notifications:', err);
-        // Don't throw - alerts are optional
+
       }
     } catch (err: any) {
       if (isMountedRef.current) {
@@ -593,7 +612,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
       );
       console.log('HCSR04 streaming started');
 
-      // Monitor the DATA characteristic for notifications
       const characteristic = await connectedDeviceRef.current.monitorCharacteristicForService(
         WIFI_SERVICE_UUID,
         HCSR04_DATA_CHARACTERISTIC_UUID,
@@ -613,16 +631,12 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
           if (char && char.value) {
             try {
-              // Log raw data for debugging
               console.log('Raw data received from ESP32:', char.value);
 
-              // Parse little-endian uint16 from base64
               const buffer = Buffer.from(char.value, 'base64');
               if (buffer.length >= 2) {
-                // Little-endian: first byte is LSB, second byte is MSB
                 const distance = buffer[0] | (buffer[1] << 8);
 
-                // Validate distance value
                 if (distance < 0 || distance > 10000) {
                   console.warn('Invalid distance value received:', distance);
                   return;
@@ -656,7 +670,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
   const stopHcsr04Streaming = async () => {
     try {
-      // Cancel notification subscription
       if (hcsr04SubscriptionRef.current) {
         try {
           hcsr04SubscriptionRef.current.remove();
@@ -666,7 +679,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
         hcsr04SubscriptionRef.current = null;
       }
 
-      // Write '0' to CTRL characteristic to stop streaming
       if (connectedDeviceRef.current) {
         try {
           const value = Buffer.from('0').toString('base64');
@@ -677,7 +689,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
           );
           console.log('HCSR04 streaming stopped');
         } catch (writeErr: any) {
-          // Device disconnected - that's okay, we're stopping anyway
           if (writeErr.message?.includes('disconnected') || writeErr.message?.includes('Device was not connected')) {
             console.log('Device disconnected, skipping stop command');
           } else {
@@ -706,7 +717,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
        setEngineTemperatures([]);
      }
 
-     // Ensure services are discovered
      try {
        await connectedDeviceRef.current.discoverAllServicesAndCharacteristics();
      } catch (discoverErr) {
@@ -718,13 +728,11 @@ export function BleProvider({ children }: { children: ReactNode }) {
        throw new Error('Device disconnected during discovery');
      }
 
-     // Remove previous subscription if exists
      if (diagnosticsMonitorRef.current) {
        try { diagnosticsMonitorRef.current.remove(); } catch {}
        diagnosticsMonitorRef.current = null;
      }
 
-     // Start diagnostics by writing '1'
      try {
        await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
          WIFI_SERVICE_UUID,
@@ -740,7 +748,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
        throw new Error('Device disconnected during write');
      }
 
-     // Subscribe to data notifications
     try {
       diagnosticsMonitorRef.current =
         connectedDeviceRef.current.monitorCharacteristicForService(
@@ -872,6 +879,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
         engineTemperatures,
         startEngineDiagnostics,
         stopEngineDiagnostics,
+        bmp280Temperature,
+        veml770Illuminance,
+        lastEngineAlertTemp,
       }}
     >
       {children}

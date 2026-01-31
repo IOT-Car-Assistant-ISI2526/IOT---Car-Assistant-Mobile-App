@@ -49,8 +49,6 @@ export default function ParkingModeScreen() {
       }
     };
 
-
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (isHcsr04Streaming) {

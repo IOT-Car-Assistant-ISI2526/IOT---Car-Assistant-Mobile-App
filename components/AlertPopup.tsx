@@ -15,7 +15,6 @@ export function AlertPopup() {
 
   React.useEffect(() => {
     if (currentAlert) {
-      // Show animation
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -29,7 +28,6 @@ export function AlertPopup() {
         }),
       ]).start();
     } else {
-      // Hide animation
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: -300,
@@ -49,7 +47,6 @@ export function AlertPopup() {
     return null;
   }
 
-  // Parse alert message format: "SENSOR: message"
   const parts = currentAlert.split(':');
   const sensorName = parts[0]?.trim() || 'Alert';
   const message = parts.slice(1).join(':').trim() || currentAlert;

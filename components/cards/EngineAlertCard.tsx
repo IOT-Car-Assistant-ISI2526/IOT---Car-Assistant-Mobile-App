@@ -24,11 +24,10 @@ export function EngineAlertCard() {
         </View>
         <View style={styles.verticalDivider} />
         <View style={styles.alertSideInfo}>
-          <ThemedText style={styles.largeValue}>{
-              lastEngineAlertTemp
+          <ThemedText style={styles.largeValue}>
+            {lastEngineAlertTemp
               ? `${lastEngineAlertTemp.toFixed(1)} °C`
-              : '—'
-              }
+              : '—'}
           </ThemedText>
 
 

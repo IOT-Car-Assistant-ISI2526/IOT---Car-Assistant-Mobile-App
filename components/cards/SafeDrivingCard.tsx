@@ -125,7 +125,6 @@ export function SafeDrivingCard() {
       <View style={styles.divider} />
 
       <View style={styles.cardBodyRow}>
-        {/* LEFT */}
         <View style={styles.cardLeftColumn}>
           <ThemedText style={styles.smallLabel}>Driving score</ThemedText>
 
@@ -146,7 +145,6 @@ export function SafeDrivingCard() {
           </View>
         </View>
 
-        {/* RIGHT */}
         <View style={styles.cardRightColumn}>
           <StatItem label="Status:" value={data.status} />
           <StatItem label="Report period:" value={`${data.reportPeriodDays} days`} />
@@ -163,7 +161,6 @@ export function SafeDrivingCard() {
 }
 
 
-// ... styles remain the same
 
 const styles = StyleSheet.create({
   card: {

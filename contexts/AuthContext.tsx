@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 
-// Update this to your server URL
-const API_URL = 'http://10.76.152.41:5000';
+const API_URL = 'http://10.137.81.41:5000';
+
 
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -22,11 +22,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const isMountedRef = useRef(true);
 
-  // Check if user is already logged in on app start
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Always start with not logged in - skip token check
     if (isMountedRef.current) {
       setIsLoading(false);
     }

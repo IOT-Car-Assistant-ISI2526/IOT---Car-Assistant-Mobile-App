@@ -13,33 +13,6 @@ import { Redirect } from "expo-router";
 export default function Index() {
   return <Redirect href="/login" />;
 }
-//
-// export default function HomeScreen() {
-//   const colorScheme = useColorScheme() ?? 'light';
-//   const colors = Colors[colorScheme];
-//   const router = useRouter();
-//
-//   const handleExaminePress = () => {
-//     router.push('/engine-diagnostics');
-//   };
-//
-//   return (
-//     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-//       <Header />
-//
-//       <ScrollView contentContainerStyle={styles.scrollContent}>
-//         <SafeDrivingCard />
-//         <EngineAlertCard />
-//         <ActionButton
-//           text="Examine"
-//           variant="small"
-//           backgroundColor={colors.buttonRed}
-//           onPress={handleExaminePress}
-//         />
-//       </ScrollView>
-//     </SafeAreaView>
-//   );
-// }
 
 const styles = StyleSheet.create({
   container: {

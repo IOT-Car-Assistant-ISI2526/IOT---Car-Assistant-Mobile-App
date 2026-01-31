@@ -49,18 +49,15 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        {/* Logo/Header */}
         <View style={styles.header}>
           <IconSymbol name="antenna.radiowaves.left.and.right" size={80} color={colors.tint} />
           <ThemedText type="title" style={styles.appTitle}>Car Assistant</ThemedText>
           <ThemedText style={styles.subtitle}>Connected Vehicle Management</ThemedText>
         </View>
 
-        {/* Login Form */}
         <View style={styles.form}>
           <ThemedText type="subtitle" style={styles.formTitle}>Sign In</ThemedText>
 
-          {/* Username Input */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>Username</ThemedText>
             <View style={[styles.inputContainer, { borderColor: colors.border || '#ccc' }]}>
@@ -77,7 +74,6 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Password Input */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>Password</ThemedText>
             <View style={[styles.inputContainer, { borderColor: colors.border || '#ccc' }]}>
@@ -105,14 +101,12 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Login Button */}
           <ActionButton
             text={isLoading ? 'Signing in...' : 'Sign In'}
             onPress={handleLogin}
             disabled={isLoading}
           />
 
-          {/* Demo Info */}
           <View style={[styles.demoInfo, { backgroundColor: colors.cardTeal + '20' }]}>
             <IconSymbol name="info.circle.fill" size={16} color={colors.tint} />
             <ThemedText style={styles.demoText}>
@@ -121,7 +115,6 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* Footer */}
         <View style={styles.footer}>
           <ThemedText style={styles.footerText}>
             Secure connection to your vehicle
@@ -131,8 +124,6 @@ export default function LoginScreen() {
     </SafeAreaView>
   );
 }
-//
-// import { TouchableOpacity } from 'react-native';
 
 const styles = StyleSheet.create({
   container: {
