@@ -2,7 +2,6 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { StatItem } from '@/components/StatItem';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBle } from '@/contexts/BleContext';
@@ -11,8 +10,17 @@ import { useBle } from '@/contexts/BleContext';
 export function EngineAlertCard() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { lastEngineAlertTemp } = useBle();
+  const { lastEngineAlertTemp, isConnected } = useBle();
 
+  // Don't render anything if device disconnected, but don't return null - return empty fragment
+  if (!isConnected) {
+    return <></>;
+  }
+
+  const displayText =
+    typeof lastEngineAlertTemp === 'number'
+      ? `${lastEngineAlertTemp.toFixed(1)} °C`
+      : '—';
 
   return (
     <View style={[styles.alertCard, { backgroundColor: colors.cardOrange }]}>
@@ -25,12 +33,8 @@ export function EngineAlertCard() {
         <View style={styles.verticalDivider} />
         <View style={styles.alertSideInfo}>
           <ThemedText style={styles.largeValue}>
-            {lastEngineAlertTemp
-              ? `${lastEngineAlertTemp.toFixed(1)} °C`
-              : '—'}
+            {displayText}
           </ThemedText>
-
-
         </View>
       </View>
     </View>

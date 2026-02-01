@@ -57,13 +57,18 @@ export function SafeDrivingCard() {
 
   const { token } = useAuth();
 
+  // Guard: zabezpieczenie przed renderowaniem bez tokena
+  if (!token) {
+    return null;
+  }
+
   const [data, setData] = useState<DrivingData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
 
-    const baseUrl = 'http://10.87.216.41:5000/api/stats';
+    const baseUrl = 'http://10.240.166.41:5000/api/stats';
 
     const endDate = new Date();
     const startDate = new Date();
@@ -75,15 +80,28 @@ export function SafeDrivingCard() {
       `${baseUrl}/${MAC_ADDRESS}/acceleration` +
       `?start_date=${format(startDate)}&end_date=${format(endDate)}`;
 
+    let isComponentMounted = true;
+    let abortController: AbortController | null = null;
+
     const fetchStats = async () => {
       try {
+        if (!isComponentMounted) {
+          return;
+        }
+
+        abortController = new AbortController();
         const response = await fetch(url, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/json',
           },
+          signal: abortController.signal,
         });
+
+        if (!isComponentMounted) {
+          return;
+        }
 
         const json = await response.json();
 
@@ -92,18 +110,31 @@ export function SafeDrivingCard() {
         }
 
         const mapped = mapApiToDrivingData(json.data);
-        setData(mapped);
-        setError(null);
+        if (isComponentMounted) {
+          setData(mapped);
+          setError(null);
+        }
       } catch (err: any) {
+        if (err.name === 'AbortError') {
+          return;
+        }
         console.error('Stats error:', err);
-        setError(err.message);
+        if (isComponentMounted) {
+          setError(err.message);
+        }
       }
     };
 
     fetchStats();
     const interval = setInterval(fetchStats, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isComponentMounted = false;
+      clearInterval(interval);
+      if (abortController) {
+        abortController.abort();
+      }
+    };
   }, [token]);
 
   if (!data) {

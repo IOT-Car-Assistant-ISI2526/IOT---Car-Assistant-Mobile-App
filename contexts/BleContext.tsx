@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { BleManager, Device, State, Characteristic } from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid, Alert } from 'react-native';
 import { Buffer } from 'buffer';
+import { useAuth } from './AuthContext';
 
 
 const WIFI_SERVICE_UUID = '000000ff-0000-1000-8000-00805f9b34fb';
@@ -15,6 +16,9 @@ const ENGINE_DIAGNOSTICS_CTRL_UUID = '0000ff08-0000-1000-8000-00805f9b34fb';
 const ENGINE_DIAGNOSTICS_DATA_UUID = '0000ff09-0000-1000-8000-00805f9b34fb';
 const TIMESTAMP_CHARACTERISTIC_UUID = '0000ff0a-0000-1000-8000-00805f9b34fb';
 const METADATA_CHARACTERISTIC_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
+const ALERT_MONITOR_TRANSACTION_ID = 'alert-monitor';
+const HCSR04_MONITOR_TRANSACTION_ID = 'hcsr04-monitor';
+const DIAGNOSTICS_MONITOR_TRANSACTION_ID = 'diagnostics-monitor';
 
 interface BleContextType {
   isConnected: boolean;
@@ -25,6 +29,7 @@ interface BleContextType {
   error: string | null;
   scanForDevices: () => Promise<void>;
   stopScan: () => void;
+  startAlertMonitoring: () => Promise<void>;
   connectDevice: (device: Device) => Promise<void>;
   disconnectDevice: () => Promise<void>;
   connectedDevice: Device | null;
@@ -49,6 +54,7 @@ interface BleContextType {
 const BleContext = createContext<BleContextType | undefined>(undefined);
 
 export function BleProvider({ children }: { children: ReactNode }) {
+  const { token } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -76,40 +82,15 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const disconnectDevice = async () => {
     operationInProgressRef.current = false;
 
-    console.log('Starting disconnectDevice');
     console.log('isHcsr04Streaming:', isHcsr04Streaming);
     console.log('connectedDeviceRef.current:', connectedDeviceRef.current);
     console.log('managerRef.current:', managerRef.current);
 
-    if (hcsr04SubscriptionRef.current) {
-      try {
-        console.log('Removing HCSR04 subscription');
-        hcsr04SubscriptionRef.current.remove();
-      } catch (err: any) {
-        console.error('Error removing HCSR04 subscription:', err);
-      }
-      hcsr04SubscriptionRef.current = null;
-    }
-
-    if (alertSubscriptionRef.current) {
-      try {
-        console.log('Removing alert subscription');
-        alertSubscriptionRef.current.remove();
-      } catch (err: any) {
-        console.error('Error removing alert subscription:', err);
-      }
-      alertSubscriptionRef.current = null;
-    }
-
-    if (diagnosticsMonitorRef.current) {
-      try {
-        console.log('Removing diagnostics subscription');
-        diagnosticsMonitorRef.current.remove();
-      } catch (err: any) {
-        console.error('Error removing diagnostics subscription:', err);
-      }
-      diagnosticsMonitorRef.current = null;
-    }
+    // Don't call remove() on subscriptions - causes native crash
+    // Just clear refs and let native cleanup happen automatically
+    hcsr04SubscriptionRef.current = null;
+    alertSubscriptionRef.current = null;
+    diagnosticsMonitorRef.current = null;
 
     if (connectedDeviceRef.current && isHcsr04Streaming) {
       try {
@@ -126,7 +107,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
     if (connectedDeviceRef.current && managerRef.current) {
       try {
-        console.log('Cancelling device connection');
         await connectedDeviceRef.current.cancelConnection();
       } catch (err: any) {
         console.error('Disconnect error:', err);
@@ -134,7 +114,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
 
     if (isMountedRef.current) {
-      console.log('Resetting state variables');
       setIsConnected(false);
       setDeviceName(null);
       setDeviceId(null);
@@ -146,7 +125,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
       setError(null);
     }
     connectedDeviceRef.current = null;
-    console.log('disconnectDevice completed');
   };
 
   useEffect(() => {
@@ -173,12 +151,17 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMountedRef.current = false;
-      if (subscriptionRef.current) {
-        subscriptionRef.current.remove();
-      }
-      if (managerRef.current) {
-        managerRef.current.destroy();
-      }
+      
+      // Don't call remove() or destroy() - they cause native crashes
+      // Native BLE library handles cleanup automatically
+      // Just clear refs to prevent JavaScript from trying to use them
+      alertSubscriptionRef.current = null;
+      hcsr04SubscriptionRef.current = null;
+      diagnosticsMonitorRef.current = null;
+      subscriptionRef.current = null;
+      connectedDeviceRef.current = null;
+      managerRef.current = null;
+      
     };
   }, []);
 
@@ -269,9 +252,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
       });
 
       setTimeout(() => {
-        if (isMountedRef.current) {
-          stopScan();
-        }
+        stopScan();
       }, 10000);
     } catch (err: any) {
       if (isMountedRef.current) {
@@ -287,6 +268,109 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
     if (isMountedRef.current) {
       setIsScanning(false);
+    }
+  };
+
+  const startAlertMonitoring = async () => {
+    if (!connectedDeviceRef.current) {
+      console.warn('Cannot start alert monitoring: no device connected');
+      return;
+    }
+
+    try {
+      const alertSubscription = connectedDeviceRef.current.monitorCharacteristicForService(
+        WIFI_SERVICE_UUID,
+        ALERT_CHARACTERISTIC_UUID,
+        (error, char) => {
+          if (!isMountedRef.current) {
+            return;
+          }
+
+          if (error) {
+            console.error('Alert notification error:', error);
+            return;
+          }
+
+          if (char && char.value) {
+            try {
+              const buffer = Buffer.from(char.value, 'base64');
+              const message = buffer.toString('utf8').trim();
+              console.log('Alert received:', message);
+
+              let modifiedMessage = message;
+              if (message.startsWith('VEML7700')) {
+                modifiedMessage = 'Visibility is low. If road is clear, high beam headlights are recommended.';
+                const valueMatch = message.match(/VEML7700:\s*(\d+\.\d)/);
+                if (valueMatch) {
+                  setVeml770Illuminance(parseFloat(valueMatch[1]));
+                }
+              } else if (message.startsWith('BMP280')) {
+                modifiedMessage = 'Risk of ice. Drive carefully.';
+                const valueMatch = message.match(/BMP280:\s*(-?\d+\.\d)/);
+                if (valueMatch) {
+                  setBmp280Temperature(parseFloat(valueMatch[1]));
+                }
+              } else if (message.startsWith('MAX6675')) {
+                const valueMatch = message.match(/MAX6675:\s*(\d+\.\d)/);
+                if (valueMatch) {
+                  const temp = parseFloat(valueMatch[1]);
+                  setLastEngineAlertTemp(temp);
+                  if (temp > 60) {
+                    modifiedMessage = 'Engine overheating';
+                  } else {
+                      modifiedMessage = '--';
+                  }
+                }
+              } else if (message.startsWith('MAC:')) {
+                const macMatch = message.match(/MAC:\s*([A-Fa-f0-9]{12})/);
+                if (macMatch) {
+                  const macAddress = macMatch[1];
+                  console.log('MAC address received:', macAddress);
+
+                  fetch('http://10.240.166.41:5000/api/devices/claim', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: token ? `Bearer ${token}` : '',
+                    },
+                    body: JSON.stringify({mac_address: macAddress }),
+                  })
+                    .then((response) => {
+                      if (!response.ok) {
+                        throw new Error('Failed to send MAC address');
+                      }
+                      console.log('MAC address sent successfully');
+                    })
+                    .catch((error) => {
+                      console.error('Error sending MAC address:', error);
+                    });
+
+                  console.log('MAC address sent to server');
+                }
+              }
+
+                if (onAlertReceivedRef.current && modifiedMessage !== '--') {
+                try {
+                  onAlertReceivedRef.current(modifiedMessage);
+                } catch (callbackErr) {
+                    console.error('Alert callback error:', callbackErr);
+                }
+              }
+            } catch (parseErr) {
+              console.warn('Failed to parse alert message:', parseErr);
+            }
+          }
+        },
+        ALERT_MONITOR_TRANSACTION_ID
+      );
+
+      if (alertSubscription) {
+        alertSubscriptionRef.current = alertSubscription;
+      } else {
+        console.log('Alert subscription is null');
+      }
+    } catch (err: any) {
+      console.error('Failed to subscribe to alert notifications:', err);
     }
   };
 
@@ -372,138 +456,43 @@ export function BleProvider({ children }: { children: ReactNode }) {
       connectedDeviceRef.current = connectedDevice;
 
       connectedDevice.onDisconnected(() => {
-        console.log('Device disconnected detected');
         operationInProgressRef.current = false;
         connectedDeviceRef.current = null;
 
-        try {
-          if (hcsr04SubscriptionRef.current) {
-            hcsr04SubscriptionRef.current.remove();
-            hcsr04SubscriptionRef.current = null;
+        // Stop alert monitoring - just clear refs, don't call .remove()
+        if (alertSubscriptionRef.current) {
+          alertSubscriptionRef.current = null;
+        }
+
+        // Clear other subscription refs
+        if (hcsr04SubscriptionRef.current) {
+          hcsr04SubscriptionRef.current = null;
+        }
+
+        if (diagnosticsMonitorRef.current) {
+          diagnosticsMonitorRef.current = null;
+        }
+
+        // Defer state updates to allow native disconnect to complete first
+        setTimeout(() => {
+          if (!isMountedRef.current) {
+            return;
           }
-        } catch (err) {
-          console.error('Error removing HCSR04 subscription:', err);
-        }
-
-        try {
-          if (alertSubscriptionRef.current) {
-            alertSubscriptionRef.current.remove();
-            alertSubscriptionRef.current = null;
+          try {
+            setIsConnected(false);
+            setDeviceName(null);
+            setDeviceId(null);
+            setConnectedDevice(null);
+            setHcsr04Distance(null);
+            setIsHcsr04Streaming(false);
+            setIsDiagnosing(false);
+            setEngineTemperatures([]);
+          } catch (err) {
+            console.error('Error resetting state after disconnection:', err);
           }
-        } catch (err) {
-          console.error('Error removing alert subscription:', err);
-        }
-
-        try {
-          if (diagnosticsMonitorRef.current) {
-            diagnosticsMonitorRef.current.remove();
-            diagnosticsMonitorRef.current = null;
-          }
-        } catch (err) {
-          console.error('Error removing diagnostics subscription:', err);
-        }
-
-        if (!isMountedRef.current) return;
-
-        try {
-          setIsConnected(false);
-          setDeviceName(null);
-          setDeviceId(null);
-          setConnectedDevice(null);
-          setHcsr04Distance(null);
-          setIsHcsr04Streaming(false);
-          setIsDiagnosing(false);
-          setEngineTemperatures([]);
-        } catch (err) {
-          console.error('Error resetting state after disconnection:', err);
-        }
+        }, 0);
       });
 
-      try {
-        const alertSubscription = connectedDevice.monitorCharacteristicForService(
-          WIFI_SERVICE_UUID,
-          ALERT_CHARACTERISTIC_UUID,
-          (error, char) => {
-            if (!isMountedRef.current) return;
-
-            if (error) {
-              console.error('Alert notification error:', error);
-              return;
-            }
-
-            if (char && char.value) {
-              try {
-                const buffer = Buffer.from(char.value, 'base64');
-                const message = buffer.toString('utf8').trim();
-                console.log('Alert received:', message);
-
-                let modifiedMessage = message;
-                if (message.startsWith('VEML7700')) {
-                  modifiedMessage = 'Visibility is low. If road is clear, high beam headlights are recommended.';
-                  const valueMatch = message.match(/VEML7700:\s*(\d+\.\d)/);
-                  if (valueMatch) {
-                    setVeml770Illuminance(parseFloat(valueMatch[1]));
-                  }
-                } else if (message.startsWith('BMP280')) {
-                  modifiedMessage = 'Risk of ice. Drive carefully.';
-                  const valueMatch = message.match(/BMP280:\s*(-?\d+\.\d)/);
-                  if (valueMatch) {
-                    setBmp280Temperature(parseFloat(valueMatch[1]));
-                  }
-                } else if (message.startsWith('MAX6675')) {
-                  const valueMatch = message.match(/MAX6675:\s*(\d+\.\d)/);
-                  if (valueMatch) {
-                    const temp = parseFloat(valueMatch[1]);
-                    setLastEngineAlertTemp(temp);
-                    if (temp > 60) {
-                      modifiedMessage = 'Engine overheating';
-                    } else {
-                        modifiedMessage = '--';
-                    }
-                  }
-                } else if (message.startsWith('MAC:')) {
-                  const macMatch = message.match(/MAC:\s*([A-Fa-f0-9]{12})/);
-                  if (macMatch) {
-                    const macAddress = macMatch[1];
-                    console.log('MAC address received:', macAddress);
-
-                    fetch('https://example.com/api/mac-address', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({ macAddress }),
-                    })
-                      .then((response) => {
-                        if (!response.ok) {
-                          throw new Error('Failed to send MAC address');
-                        }
-                        console.log('MAC address sent successfully');
-                      })
-                      .catch((error) => {
-                        console.error('Error sending MAC address:', error);
-                      });
-                  }
-                }
-
-                if (onAlertReceivedRef.current && modifiedMessage !== '--') {
-                  onAlertReceivedRef.current(modifiedMessage);
-                }
-              } catch (parseErr) {
-                console.warn('Failed to parse alert message:', parseErr);
-              }
-            }
-          }
-        );
-
-        if (alertSubscription) {
-          alertSubscriptionRef.current = alertSubscription;
-          console.log('Alert notifications subscribed');
-        }
-      } catch (err: any) {
-        console.error('Failed to subscribe to alert notifications:', err);
-
-      }
     } catch (err: any) {
       if (isMountedRef.current) {
         setError(err.message || 'Failed to connect to device');
@@ -585,12 +574,8 @@ export function BleProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
+      // Don't call remove() - just clear ref
       if (hcsr04SubscriptionRef.current) {
-        try {
-          hcsr04SubscriptionRef.current.remove();
-        } catch (e) {
-          console.warn('Error cleaning up previous subscription:', e);
-        }
         hcsr04SubscriptionRef.current = null;
       }
 
@@ -653,7 +638,8 @@ export function BleProvider({ children }: { children: ReactNode }) {
           } else {
             console.warn('Received empty or invalid characteristic data.');
           }
-        }
+        },
+        HCSR04_MONITOR_TRANSACTION_ID
       );
 
       hcsr04SubscriptionRef.current = characteristic;
@@ -670,14 +656,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
   const stopHcsr04Streaming = async () => {
     try {
-      if (hcsr04SubscriptionRef.current) {
-        try {
-          hcsr04SubscriptionRef.current.remove();
-        } catch (e) {
-          console.warn('Error removing subscription:', e);
-        }
-        hcsr04SubscriptionRef.current = null;
-      }
+      // Don't call remove() - just clear ref
+      hcsr04SubscriptionRef.current = null;
+
 
       if (connectedDeviceRef.current) {
         try {
@@ -718,7 +699,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
      }
 
      try {
-       await connectedDeviceRef.current.discoverAllServicesAndCharacteristics();
+      await connectedDeviceRef.current.discoverAllServicesAndCharacteristics();
      } catch (discoverErr) {
        console.error('Failed to discover services:', discoverErr);
        if (isMountedRef.current) {
@@ -728,10 +709,11 @@ export function BleProvider({ children }: { children: ReactNode }) {
        throw new Error('Device disconnected during discovery');
      }
 
+     // Don't call remove() - just clear ref
      if (diagnosticsMonitorRef.current) {
-       try { diagnosticsMonitorRef.current.remove(); } catch {}
        diagnosticsMonitorRef.current = null;
      }
+
 
      try {
        await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
@@ -794,7 +776,8 @@ export function BleProvider({ children }: { children: ReactNode }) {
             } catch (outerErr) {
               console.error('Unexpected error in diagnostics handler:', outerErr);
             }
-          }
+          },
+          DIAGNOSTICS_MONITOR_TRANSACTION_ID
         );
     } catch (monitorErr: any) {
       console.error('Failed to monitor diagnostics:', monitorErr);
@@ -823,10 +806,11 @@ export function BleProvider({ children }: { children: ReactNode }) {
    if (!connectedDeviceRef.current) return;
 
    try {
+     // Don't call remove() - just clear ref
      if (diagnosticsMonitorRef.current) {
-       try { diagnosticsMonitorRef.current.remove(); } catch {}
        diagnosticsMonitorRef.current = null;
      }
+
 
      await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
        WIFI_SERVICE_UUID,
@@ -864,6 +848,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         error,
         scanForDevices,
         stopScan,
+        startAlertMonitoring,
         connectDevice,
         disconnectDevice,
         connectedDevice,

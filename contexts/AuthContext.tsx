@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'http://10.137.81.41:5000';
+const API_URL = 'http://10.240.166.41:5000';
 
 
 interface AuthContextType {

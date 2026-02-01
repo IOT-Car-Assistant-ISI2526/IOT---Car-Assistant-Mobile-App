@@ -9,6 +9,7 @@ import { EngineAlertCard } from '@/components/cards/EngineAlertCard';
 import { ActionButton } from '@/components/ActionButton';
 import { useRouter } from 'expo-router';
 import { Redirect } from "expo-router";
+import { ThemedText } from '@/components/themed-text';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';

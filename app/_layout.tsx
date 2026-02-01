@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import 'react-native-reanimated';
 import { ActivityIndicator, View } from 'react-native';
 
@@ -19,6 +20,11 @@ export const unstable_settings = {
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const { isLoggedIn, isLoading } = useAuth();
+
+  useEffect(() => {
+    return () => {
+    };
+  }, []);
 
   if (isLoading) {
     return (
@@ -47,13 +53,18 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    return () => {
+    };
+  }, []);
+
   return (
-    <BleProvider>
-      <AlertProvider>
-        <AuthProvider>
+    <AuthProvider>
+      <BleProvider>
+        <AlertProvider>
           <RootLayoutNav />
-        </AuthProvider>
-      </AlertProvider>
-    </BleProvider>
+        </AlertProvider>
+      </BleProvider>
+    </AuthProvider>
   );
 }
