@@ -68,7 +68,7 @@ export function SafeDrivingCard() {
   useEffect(() => {
     if (!token) return;
 
-    const baseUrl = 'http://10.240.166.41:5000/api/stats';
+    const baseUrl = 'http://10.99.249.41:5000/api/stats';
 
     const endDate = new Date();
     const startDate = new Date();

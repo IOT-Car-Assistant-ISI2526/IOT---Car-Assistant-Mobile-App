@@ -79,6 +79,43 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const [veml770Illuminance, setVeml770Illuminance] = useState<number | null>(null);
   const [lastEngineAlertTemp, setLastEngineAlertTemp] = useState<number | null>(null);
 
+
+
+  const cancelMonitors = () => {
+
+    try { managerRef.current?.cancelTransaction(ALERT_MONITOR_TRANSACTION_ID); } catch {}
+
+    try { managerRef.current?.cancelTransaction(HCSR04_MONITOR_TRANSACTION_ID); } catch {}
+
+    try { managerRef.current?.cancelTransaction(DIAGNOSTICS_MONITOR_TRANSACTION_ID); } catch {}
+
+    alertSubscriptionRef.current = null;
+
+    hcsr04SubscriptionRef.current = null;
+
+    diagnosticsMonitorRef.current = null;
+
+  };
+
+  const resetConnectionState = () => {
+    if (!isMountedRef.current) return;
+
+    setIsConnected(false);
+    setDeviceName(null);
+    setDeviceId(null);
+    setConnectedDevice(null);
+    setHcsr04Distance(null);
+    setIsHcsr04Streaming(false);
+    setIsDiagnosing(false);
+    setEngineTemperatures([]);
+  };
+
+  const handleDeviceDisconnected = () => {
+    cancelMonitors();
+    connectedDeviceRef.current = null;
+    resetConnectionState();
+  };
+
   const disconnectDevice = async () => {
     operationInProgressRef.current = false;
 
@@ -88,9 +125,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
     // Don't call remove() on subscriptions - causes native crash
     // Just clear refs and let native cleanup happen automatically
-    hcsr04SubscriptionRef.current = null;
-    alertSubscriptionRef.current = null;
-    diagnosticsMonitorRef.current = null;
+    cancelMonitors();
 
     if (connectedDeviceRef.current && isHcsr04Streaming) {
       try {
@@ -114,14 +149,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
 
     if (isMountedRef.current) {
-      setIsConnected(false);
-      setDeviceName(null);
-      setDeviceId(null);
-      setConnectedDevice(null);
-      setHcsr04Distance(null);
-      setIsHcsr04Streaming(false);
-      setIsDiagnosing(false);
-      setEngineTemperatures([]);
+      resetConnectionState();
       setError(null);
     }
     connectedDeviceRef.current = null;
@@ -151,7 +179,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMountedRef.current = false;
-      
+
       // Don't call remove() or destroy() - they cause native crashes
       // Native BLE library handles cleanup automatically
       // Just clear refs to prevent JavaScript from trying to use them
@@ -161,7 +189,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
       subscriptionRef.current = null;
       connectedDeviceRef.current = null;
       managerRef.current = null;
-      
+
     };
   }, []);
 
@@ -278,6 +306,11 @@ export function BleProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      if (alertSubscriptionRef.current) {
+        try { managerRef.current?.cancelTransaction(ALERT_MONITOR_TRANSACTION_ID); } catch {}
+        alertSubscriptionRef.current = null;
+      }
+
       const alertSubscription = connectedDeviceRef.current.monitorCharacteristicForService(
         WIFI_SERVICE_UUID,
         ALERT_CHARACTERISTIC_UUID,
@@ -286,9 +319,17 @@ export function BleProvider({ children }: { children: ReactNode }) {
             return;
           }
 
+
           if (error) {
+
             console.error('Alert notification error:', error);
+
+            if (error.message?.includes('disconnected') || error.message?.includes('Device was not connected')) {
+              handleDeviceDisconnected();
+            }
+
             return;
+
           }
 
           if (char && char.value) {
@@ -327,7 +368,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
                   const macAddress = macMatch[1];
                   console.log('MAC address received:', macAddress);
 
-                  fetch('http://10.240.166.41:5000/api/devices/claim', {
+                  fetch('http://10.99.249.41:5000/api/devices/claim', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
@@ -389,7 +430,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         TIMESTAMP_CHARACTERISTIC_UUID,
         base64Data
       );
-      
+
       console.log('Timestamp synced via BLE:', timestamp);
       console.log('Timestamp bytes (little-endian):', Array.from(buffer));
     } catch (err: any) {
@@ -455,23 +496,11 @@ export function BleProvider({ children }: { children: ReactNode }) {
       }
       connectedDeviceRef.current = connectedDevice;
 
+      // Start alert monitoring immediately after connection
+      await startAlertMonitoring();
+
       connectedDevice.onDisconnected(() => {
         operationInProgressRef.current = false;
-        connectedDeviceRef.current = null;
-
-        // Stop alert monitoring - just clear refs, don't call .remove()
-        if (alertSubscriptionRef.current) {
-          alertSubscriptionRef.current = null;
-        }
-
-        // Clear other subscription refs
-        if (hcsr04SubscriptionRef.current) {
-          hcsr04SubscriptionRef.current = null;
-        }
-
-        if (diagnosticsMonitorRef.current) {
-          diagnosticsMonitorRef.current = null;
-        }
 
         // Defer state updates to allow native disconnect to complete first
         setTimeout(() => {
@@ -479,14 +508,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
             return;
           }
           try {
-            setIsConnected(false);
-            setDeviceName(null);
-            setDeviceId(null);
-            setConnectedDevice(null);
-            setHcsr04Distance(null);
-            setIsHcsr04Streaming(false);
-            setIsDiagnosing(false);
-            setEngineTemperatures([]);
+            handleDeviceDisconnected();
           } catch (err) {
             console.error('Error resetting state after disconnection:', err);
           }
@@ -807,9 +829,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
    try {
      // Don't call remove() - just clear ref
-     if (diagnosticsMonitorRef.current) {
-       diagnosticsMonitorRef.current = null;
-     }
+
+    try { managerRef.current?.cancelTransaction(DIAGNOSTICS_MONITOR_TRANSACTION_ID); } catch {}
+    diagnosticsMonitorRef.current = null;
 
 
      await connectedDeviceRef.current.writeCharacteristicWithoutResponseForService(
