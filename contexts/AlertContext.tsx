@@ -12,6 +12,9 @@ export function AlertProvider({ children }: { children: ReactNode }) {
   const [currentAlert, setCurrentAlert] = useState<string | null>(null);
 
   const showAlert = (message: string) => {
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      return;
+    }
     setCurrentAlert(message);
   };
 

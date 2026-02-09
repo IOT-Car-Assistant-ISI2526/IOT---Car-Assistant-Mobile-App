@@ -28,6 +28,7 @@ export default function ConnectDeviceScreen() {
     writeSsid,
     writePassword,
     triggerWifiSwitch,
+    setAlertCallback,
   } = useBle();
 
   const [ssid, setSsid] = useState('');
@@ -39,6 +40,21 @@ export default function ConnectDeviceScreen() {
       stopScan();
     };
   }, []);
+
+  useEffect(() => {
+    const handleWifiAlert = (message: string) => {
+      // Check if this is a WiFi-related error/alert
+      if (message && (message.includes('WiFi') || message.includes('wifi') || message.includes('WIFI'))) {
+        Alert.alert('WiFi Connection', message);
+      }
+    };
+
+    setAlertCallback(handleWifiAlert);
+
+    return () => {
+      setAlertCallback(() => {});
+    };
+  }, [setAlertCallback]);
 
   const handleScan = async () => {
     await scanForDevices();
@@ -67,6 +83,17 @@ export default function ConnectDeviceScreen() {
       setPassword('');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to send credentials');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConnectWifiAutomatic = async () => {
+    setIsSubmitting(true);
+    try {
+      await triggerWifiSwitch();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to connect WiFi');
     } finally {
       setIsSubmitting(false);
     }
@@ -105,6 +132,17 @@ export default function ConnectDeviceScreen() {
 
             <View style={styles.wifiForm}>
               <ThemedText type="subtitle" style={styles.wifiTitle}>Configure Wi-Fi</ThemedText>
+              
+              <ActionButton
+                text="Connect WiFi (Last Saved)"
+                onPress={handleConnectWifiAutomatic}
+                variant="default"
+                disabled={isSubmitting}
+              />
+
+              <View style={styles.divider} />
+
+              <ThemedText type="subtitle" style={styles.wifiTitle}>Add New Network</ThemedText>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
                 placeholder="Enter Wi-Fi SSID"
@@ -296,6 +334,13 @@ const styles = StyleSheet.create({
   wifiTitle: {
     textAlign: 'center',
     marginBottom: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#cccccc',
+    opacity: 0.3,
+    width: '100%',
+    marginVertical: 10,
   },
   input: {
     padding: 15,

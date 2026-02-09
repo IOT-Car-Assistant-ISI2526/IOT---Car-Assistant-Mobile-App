@@ -3,6 +3,8 @@ import { BleManager, Device, State, Characteristic } from 'react-native-ble-plx'
 import { Platform, PermissionsAndroid, Alert } from 'react-native';
 import { Buffer } from 'buffer';
 import { useAuth } from './AuthContext';
+import {API_URL} from "@/constants/API_URL";
+import * as SecureStore from 'expo-secure-store';
 
 
 const WIFI_SERVICE_UUID = '000000ff-0000-1000-8000-00805f9b34fb';
@@ -24,6 +26,7 @@ interface BleContextType {
   isConnected: boolean;
   deviceName: string | null;
   deviceId: string | null;
+  claimedMacAddress: string | null;
   isScanning: boolean;
   scannedDevices: Device[];
   error: string | null;
@@ -58,6 +61,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [claimedMacAddress, setClaimedMacAddress] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scannedDevices, setScannedDevices] = useState<Device[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +76,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const alertSubscriptionRef = useRef<any>(null);
   const onAlertReceivedRef = useRef<((message: string) => void) | null>(null);
   const isMountedRef = useRef(true);
+  const isDisconnectingRef = useRef(false);
   const operationInProgressRef = useRef(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [engineTemperatures, setEngineTemperatures] = useState<number[]>([]);
@@ -100,6 +105,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const resetConnectionState = () => {
     if (!isMountedRef.current) return;
 
+    isDisconnectingRef.current = false;
     setIsConnected(false);
     setDeviceName(null);
     setDeviceId(null);
@@ -158,6 +164,17 @@ export function BleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     isMountedRef.current = true;
     managerRef.current = new BleManager();
+
+    (async () => {
+      try {
+        const storedMac = await SecureStore.getItemAsync('claimed_mac_address');
+        if (isMountedRef.current && storedMac) {
+          setClaimedMacAddress(storedMac);
+        }
+      } catch (err) {
+        console.warn('Failed to restore claimed MAC address:', err);
+      }
+    })();
 
     const subscription = managerRef.current.onStateChange((state) => {
       if (!isMountedRef.current) return;
@@ -304,6 +321,19 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.warn('Cannot start alert monitoring: no device connected');
       return;
     }
+    if (isDisconnectingRef.current) {
+      console.warn('Cannot start alert monitoring: device disconnecting');
+      return;
+    }
+
+    const deviceId = connectedDeviceRef.current.id;
+    const isDeviceConnected = managerRef.current
+      ? await managerRef.current.isDeviceConnected(deviceId).catch(() => false)
+      : false;
+    if (!isDeviceConnected) {
+      console.warn('Cannot start alert monitoring: device not connected');
+      return;
+    }
 
     try {
       if (alertSubscriptionRef.current) {
@@ -336,6 +366,9 @@ export function BleProvider({ children }: { children: ReactNode }) {
             try {
               const buffer = Buffer.from(char.value, 'base64');
               const message = buffer.toString('utf8').trim();
+              if (message.length === 0) {
+                return;
+              }
               console.log('Alert received:', message);
 
               let modifiedMessage = message;
@@ -362,39 +395,57 @@ export function BleProvider({ children }: { children: ReactNode }) {
                       modifiedMessage = '--';
                   }
                 }
+
+              } else if (message.includes('WiFi') || message.includes('wifi') || message.includes('WIFI')) {
+
+
+                modifiedMessage = message;
+
               } else if (message.startsWith('MAC:')) {
                 const macMatch = message.match(/MAC:\s*([A-Fa-f0-9]{12})/);
                 if (macMatch) {
                   const macAddress = macMatch[1];
                   console.log('MAC address received:', macAddress);
 
-                  fetch('http://10.99.249.41:5000/api/devices/claim', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: token ? `Bearer ${token}` : '',
-                    },
-                    body: JSON.stringify({mac_address: macAddress }),
-                  })
-                    .then((response) => {
+                  void (async () => {
+                    try {
+                      const response = await fetch(API_URL + '/api/devices/claim', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: token ? `Bearer ${token}` : '',
+                        },
+                        body: JSON.stringify({ mac_address: macAddress }),
+                      });
+
                       if (!response.ok) {
                         throw new Error('Failed to send MAC address');
                       }
+
+                      if (isMountedRef.current) {
+                        setClaimedMacAddress(macAddress);
+                      }
+                      await SecureStore.setItemAsync('claimed_mac_address', macAddress);
                       console.log('MAC address sent successfully');
-                    })
-                    .catch((error) => {
+                    } catch (error) {
                       console.error('Error sending MAC address:', error);
-                    });
+                    }
+                  })();
 
                   console.log('MAC address sent to server');
                 }
               }
 
-                if (onAlertReceivedRef.current && modifiedMessage !== '--') {
+              if (
+                onAlertReceivedRef.current &&
+                modifiedMessage !== '--' &&
+                typeof modifiedMessage === 'string' &&
+                modifiedMessage.trim().length > 0
+              ) {
                 try {
                   onAlertReceivedRef.current(modifiedMessage);
                 } catch (callbackErr) {
-                    console.error('Alert callback error:', callbackErr);
+                  console.error('Alert callback error:', callbackErr);
                 }
               }
             } catch (parseErr) {
@@ -414,32 +465,6 @@ export function BleProvider({ children }: { children: ReactNode }) {
       console.error('Failed to subscribe to alert notifications:', err);
     }
   };
-
-
-  const syncTimestamp = async (device: Device) => {
-    try {
-      const timestamp = Math.floor(Date.now() / 1000);
-
-      const buffer = Buffer.alloc(4);
-      buffer.writeUInt32LE(timestamp, 0);
-
-      const base64Data = buffer.toString('base64');
-
-      await device.writeCharacteristicWithoutResponseForService(
-        WIFI_SERVICE_UUID,
-        TIMESTAMP_CHARACTERISTIC_UUID,
-        base64Data
-      );
-
-      console.log('Timestamp synced via BLE:', timestamp);
-      console.log('Timestamp bytes (little-endian):', Array.from(buffer));
-    } catch (err: any) {
-      console.error('Failed to sync timestamp:', err);
-      console.warn('Device will use fallback timestamp (BUILD_TIMESTAMP + uptime)');
-    }
-  };
-
-
   const sendMetadata = async (device: Device, note?: string) => {
     try {
       const timestamp = Math.floor(Date.now() / 1000);
@@ -501,6 +526,8 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
       connectedDevice.onDisconnected(() => {
         operationInProgressRef.current = false;
+        isDisconnectingRef.current = true;
+        cancelMonitors();
 
         // Defer state updates to allow native disconnect to complete first
         setTimeout(() => {
@@ -593,6 +620,10 @@ export function BleProvider({ children }: { children: ReactNode }) {
   const startHcsr04Streaming = async () => {
     if (!connectedDeviceRef.current) {
       console.warn('Attempted to start HCSR04 streaming, but no device is connected.');
+      return;
+    }
+    if (isDisconnectingRef.current) {
+      console.warn('Attempted to start HCSR04 streaming while disconnecting.');
       return;
     }
     try {
@@ -713,6 +744,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
 
  const startEngineDiagnostics = async () => {
    if (!connectedDeviceRef.current) throw new Error('No device connected');
+   if (isDisconnectingRef.current) throw new Error('Device disconnecting');
 
    try {
      if (isMountedRef.current) {
@@ -865,6 +897,7 @@ export function BleProvider({ children }: { children: ReactNode }) {
         isConnected,
         deviceName,
         deviceId,
+        claimedMacAddress,
         isScanning,
         scannedDevices,
         error,

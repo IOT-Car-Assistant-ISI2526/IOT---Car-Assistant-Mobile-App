@@ -13,8 +13,10 @@ export function AlertPopup() {
   const slideAnim = React.useRef(new Animated.Value(-300)).current;
   const opacityAnim = React.useRef(new Animated.Value(0)).current;
 
+  const alertText = typeof currentAlert === 'string' ? currentAlert.trim() : '';
+
   React.useEffect(() => {
-    if (currentAlert) {
+    if (alertText) {
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -41,19 +43,19 @@ export function AlertPopup() {
         }),
       ]).start();
     }
-  }, [currentAlert]);
+  }, [alertText]);
 
-  if (!currentAlert) {
+  if (!alertText) {
     return null;
   }
 
-  const parts = currentAlert.split(':');
+  const parts = alertText.split(':');
   const sensorName = parts[0]?.trim() || 'Alert';
-  const message = parts.slice(1).join(':').trim() || currentAlert;
+  const message = parts.slice(1).join(':').trim() || alertText;
 
   return (
     <Modal
-      visible={!!currentAlert}
+      visible={!!alertText}
       transparent
       animationType="none"
       onRequestClose={dismissAlert}

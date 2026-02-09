@@ -5,6 +5,8 @@ import { StatItem } from '@/components/StatItem';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBle } from '@/contexts/BleContext';
+import {API_URL} from "@/constants/API_URL";
 
 interface DrivingApiResponse {
   score: number;
@@ -27,8 +29,6 @@ interface DrivingData {
   detectedCollisions: number;
   dailyScores: number[];
 }
-
-const MAC_ADDRESS = '885721227344';
 
 function generateDailyScores(score: number): number[] {
   const base = Math.max(40, Math.min(score, 95));
@@ -56,6 +56,7 @@ export function SafeDrivingCard() {
   const colors = Colors[colorScheme];
 
   const { token } = useAuth();
+  const { claimedMacAddress } = useBle();
 
   // Guard: zabezpieczenie przed renderowaniem bez tokena
   if (!token) {
@@ -66,9 +67,12 @@ export function SafeDrivingCard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !claimedMacAddress) return;
 
-    const baseUrl = 'http://10.99.249.41:5000/api/stats';
+    setData(null);
+    setError(null);
+
+    const baseUrl = API_URL + '/api/stats';
 
     const endDate = new Date();
     const startDate = new Date();
@@ -77,7 +81,7 @@ export function SafeDrivingCard() {
     const format = (d: Date) => d.toISOString().split('T')[0];
 
     const url =
-      `${baseUrl}/${MAC_ADDRESS}/acceleration` +
+      `${baseUrl}/${claimedMacAddress}/acceleration` +
       `?start_date=${format(startDate)}&end_date=${format(endDate)}`;
 
     let isComponentMounted = true;
@@ -135,7 +139,17 @@ export function SafeDrivingCard() {
         abortController.abort();
       }
     };
-  }, [token]);
+  }, [token, claimedMacAddress]);
+
+  if (!claimedMacAddress) {
+    return (
+      <View style={[styles.card, { backgroundColor: colors.card }]}>
+        <ThemedText style={{ textAlign: 'center' }}>
+          No claimed device yet. Connect and claim a BLE device first.
+        </ThemedText>
+      </View>
+    );
+  }
 
   if (!data) {
     return (
